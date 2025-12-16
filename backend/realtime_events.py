@@ -1,0 +1,141 @@
+"""
+Real-Time Event Manager - Ensures ALL dashboard updates happen via WebSocket
+"""
+import asyncio
+from websocket_manager import manager
+from logger_config import logger
+
+class RealTimeEvents:
+    """Centralized real-time event broadcasting"""
+    
+    @staticmethod
+    async def bot_created(user_id: str, bot_data: dict):
+        """Broadcast when bot is created"""
+        await manager.send_message(user_id, {
+            "type": "bot_created",
+            "bot": bot_data,
+            "message": f"✅ Bot '{bot_data.get('name')}' created"
+        })
+        logger.info(f"📡 Real-time: bot_created for user {user_id[:8]}")
+    
+    @staticmethod
+    async def bot_updated(user_id: str, bot_id: str, changes: dict):
+        """Broadcast when bot is updated"""
+        await manager.send_message(user_id, {
+            "type": "bot_updated",
+            "bot_id": bot_id,
+            "changes": changes,
+            "message": "Bot updated"
+        })
+    
+    @staticmethod
+    async def bot_deleted(user_id: str, bot_name: str):
+        """Broadcast when bot is deleted"""
+        await manager.send_message(user_id, {
+            "type": "bot_deleted",
+            "message": f"🗑️ Bot '{bot_name}' deleted"
+        })
+    
+    @staticmethod
+    async def trade_executed(user_id: str, trade_data: dict):
+        """Broadcast when trade executes"""
+        await manager.send_message(user_id, {
+            "type": "trade_executed",
+            "trade": trade_data,
+            "message": f"📊 Trade executed: {trade_data.get('pair')}"
+        })
+    
+    @staticmethod
+    async def profit_updated(user_id: str, new_profit: float, bot_name: str = None):
+        """Broadcast when profit changes"""
+        msg = f"💰 Profit updated: R{new_profit:.2f}"
+        if bot_name:
+            msg = f"💰 {bot_name} profit: R{new_profit:.2f}"
+        
+        await manager.send_message(user_id, {
+            "type": "profit_updated",
+            "total_profit": new_profit,
+            "bot_name": bot_name,
+            "message": msg
+        })
+    
+    @staticmethod
+    async def system_mode_changed(user_id: str, mode: str, enabled: bool):
+        """Broadcast system mode changes"""
+        await manager.send_message(user_id, {
+            "type": "system_mode_update",
+            "mode": mode,
+            "enabled": enabled,
+            "message": f"⚙️ {mode} {'enabled' if enabled else 'disabled'}"
+        })
+    
+    @staticmethod
+    async def api_key_connected(user_id: str, provider: str, status: str):
+        """Broadcast API key connection status"""
+        emoji = "✅" if status == "connected" else "❌"
+        await manager.send_message(user_id, {
+            "type": "api_key_update",
+            "provider": provider,
+            "status": status,
+            "message": f"{emoji} {provider.upper()} {status}"
+        })
+    
+    @staticmethod
+    async def autopilot_action(user_id: str, action_type: str, details: dict):
+        """Broadcast autopilot actions"""
+        await manager.send_message(user_id, {
+            "type": "autopilot_action",
+            "action_type": action_type,
+            "details": details,
+            "message": details.get('message', 'Autopilot action executed')
+        })
+    
+    @staticmethod
+    async def self_healing_action(user_id: str, bot_name: str, reason: str):
+        """Broadcast self-healing actions"""
+        await manager.send_message(user_id, {
+            "type": "self_healing",
+            "bot_name": bot_name,
+            "reason": reason,
+            "message": f"🛡️ Self-Healing: Paused '{bot_name}' - {reason}"
+        })
+    
+    @staticmethod
+    async def bot_promoted(user_id: str, bot_name: str):
+        """Broadcast bot promotion to live"""
+        await manager.send_message(user_id, {
+            "type": "bot_promoted",
+            "bot_name": bot_name,
+            "message": f"🎉 '{bot_name}' promoted to LIVE trading!"
+        })
+    
+    @staticmethod
+    async def force_refresh(user_id: str, reason: str = None):
+        """Force complete dashboard refresh"""
+        await manager.send_message(user_id, {
+            "type": "force_refresh",
+            "message": reason or "Dashboard updated"
+        })
+    
+    @staticmethod
+    async def countdown_updated(user_id: str, days: int, current_capital: float):
+        """Broadcast countdown updates"""
+        await manager.send_message(user_id, {
+            "type": "countdown_update",
+            "days": days,
+            "current_capital": current_capital,
+            "message": f"📈 {days} days to R1M"
+        })
+    
+    @staticmethod
+    async def ai_evolution(user_id: str, action: str, details: dict):
+        """Broadcast AI learning/evolution actions"""
+        await manager.send_message(user_id, {
+            "type": "ai_evolution",
+            "action": action,
+            "details": details,
+            "message": f"🧠 AI Evolution: {action}"
+        })
+
+# Global instance
+rt_events = RealTimeEvents()

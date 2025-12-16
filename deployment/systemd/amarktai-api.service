@@ -1,0 +1,25 @@
+[Unit]
+Description=Amarktai Network API Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/amarktai/app/backend
+Environment="PATH=/var/amarktai/app/backend/.venv/bin"
+EnvironmentFile=/var/amarktai/app/backend/.env
+ExecStart=/var/amarktai/app/backend/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=amarktai-api
+
+# Resource limits
+MemoryMax=2G
+CPUQuota=150%
+
+[Install]
+WantedBy=multi-user.target

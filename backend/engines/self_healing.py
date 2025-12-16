@@ -1,0 +1,207 @@
+"""
+Self-Healing System
+Detects and fixes rogue bots and system issues automatically
+"""
+import asyncio
+from datetime import datetime, timezone, timedelta
+from database import bots_collection, trades_collection
+from logger_config import logger
+from config import MAX_HOURLY_LOSS_PERCENT, MAX_DRAWDOWN_PERCENT
+
+
+class SelfHealingSystem:
+    def __init__(self):
+        self.is_running = False
+        self.task = None
+        self.detection_rules = [
+            self.detect_excessive_loss,
+            self.detect_stuck_bot,
+            self.detect_abnormal_trading,
+            self.detect_capital_anomaly
+        ]
+    
+    async def detect_excessive_loss(self, bot: dict) -> tuple[bool, str]:
+        """Detect if bot lost >15% in 1 hour"""
+        try:
+            bot_id = bot['id']
+            one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            
+            # Get trades in last hour
+            recent_trades = await trades_collection.find({
+                "bot_id": bot_id,
+                "timestamp": {"$gte": one_hour_ago}
+            }, {"_id": 0}).to_list(1000)
+            
+            if not recent_trades:
+                return False, "OK"
+            
+            # Calculate hourly loss
+            hourly_loss = sum(t.get('profit_loss', 0) for t in recent_trades)
+            current_capital = bot.get('current_capital', 1000)
+            loss_percent = abs(hourly_loss / current_capital) if current_capital > 0 else 0
+            
+            if hourly_loss < 0 and loss_percent > MAX_HOURLY_LOSS_PERCENT:
+                return True, f"🚨 Excessive loss: {loss_percent*100:.1f}% in 1 hour"
+            
+            return False, "OK"
+        
+        except Exception as e:
+            logger.error(f"Detect excessive loss error: {e}")
+            return False, "Error"
+    
+    async def detect_stuck_bot(self, bot: dict) -> tuple[bool, str]:
+        """Detect if bot hasn't traded in 24 hours despite being active"""
+        try:
+            if bot.get('status') != 'active':
+                return False, "OK"
+            
+            last_trade = bot.get('last_trade_time')
+            if not last_trade:
+                # New bot, give it 24 hours
+                created = bot.get('created_at')
+                if created:
+                    created_dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                    hours_since_created = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                    if hours_since_created > 24:
+                        return True, "🚨 Bot stuck: No trades in 24 hours since creation"
+                return False, "OK"
+            
+            if isinstance(last_trade, str):
+                last_trade = datetime.fromisoformat(last_trade.replace('Z', '+00:00'))
+            
+            hours_since_trade = (datetime.now(timezone.utc) - last_trade).total_seconds() / 3600
+            
+            if hours_since_trade > 24:
+                return True, f"🚨 Bot stuck: No trades in {hours_since_trade:.1f} hours"
+            
+            return False, "OK"
+        
+        except Exception as e:
+            logger.error(f"Detect stuck bot error: {e}")
+            return False, "Error"
+    
+    async def detect_abnormal_trading(self, bot: dict) -> tuple[bool, str]:
+        """Detect abnormal trading patterns (too many trades)"""
+        try:
+            daily_count = bot.get('daily_trade_count', 0)
+            
+            # Check if bot is trying to exceed daily limit
+            if daily_count >= 50:
+                return True, f"🚨 Abnormal trading: {daily_count} trades today (limit: 50)"
+            
+            return False, "OK"
+        
+        except Exception as e:
+            logger.error(f"Detect abnormal trading error: {e}")
+            return False, "Error"
+    
+    async def detect_capital_anomaly(self, bot: dict) -> tuple[bool, str]:
+        """Detect if capital dropped below critical threshold"""
+        try:
+            initial_capital = bot.get('initial_capital', 1000)
+            current_capital = bot.get('current_capital', 1000)
+            
+            loss_percent = 1 - (current_capital / initial_capital) if initial_capital > 0 else 0
+            
+            if loss_percent > MAX_DRAWDOWN_PERCENT:
+                return True, f"🚨 Capital anomaly: {loss_percent*100:.1f}% drawdown"
+            
+            return False, "OK"
+        
+        except Exception as e:
+            logger.error(f"Detect capital anomaly error: {e}")
+            return False, "Error"
+    
+    async def fix_rogue_bot(self, bot: dict, issue: str) -> bool:
+        """Automatically fix rogue bot"""
+        try:
+            bot_id = bot['id']
+            bot_name = bot.get('name', 'Unknown')
+            
+            # Pause the bot
+            await bots_collection.update_one(
+                {"id": bot_id},
+                {"$set": {
+                    "status": "paused",
+                    "rogue_detected_at": datetime.now(timezone.utc).isoformat(),
+                    "rogue_reason": issue
+                }}
+            )
+            
+            logger.warning(f"🛡️ Self-Healing: Paused rogue bot '{bot_name}' - {issue}")
+            
+            # Send WebSocket notification
+            try:
+                from websocket_manager import manager
+                await manager.send_message(bot['user_id'], {
+                    "type": "rogue_bot_detected",
+                    "bot_name": bot_name,
+                    "issue": issue
+                })
+            except:
+                pass
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"Fix rogue bot error: {e}")
+            return False
+    
+    async def scan_all_bots(self):
+        """Scan all active bots for issues"""
+        try:
+            bots = await bots_collection.find({"status": "active"}, {"_id": 0}).to_list(1000)
+            
+            rogue_count = 0
+            
+            for bot in bots:
+                # Run all detection rules
+                for detection_rule in self.detection_rules:
+                    is_rogue, issue = await detection_rule(bot)
+                    
+                    if is_rogue:
+                        logger.warning(f"⚠️ Rogue bot detected: {bot.get('name')} - {issue}")
+                        
+                        # Auto-fix
+                        if await self.fix_rogue_bot(bot, issue):
+                            rogue_count += 1
+                        
+                        break  # Stop checking other rules for this bot
+            
+            if rogue_count > 0:
+                logger.info(f"🛡️ Self-Healing: Fixed {rogue_count} rogue bots")
+        
+        except Exception as e:
+            logger.error(f"Scan all bots error: {e}")
+    
+    async def healing_loop(self):
+        """Main self-healing loop - runs every 30 minutes"""
+        logger.info("🛡️ Self-Healing system started")
+        
+        while self.is_running:
+            try:
+                await self.scan_all_bots()
+                
+                # Wait 30 minutes
+                await asyncio.sleep(1800)
+            
+            except Exception as e:
+                logger.error(f"Healing loop error: {e}")
+                await asyncio.sleep(300)  # Wait 5 minutes on error
+    
+    def start(self):
+        """Start self-healing system"""
+        if not self.is_running:
+            self.is_running = True
+            self.task = asyncio.create_task(self.healing_loop())
+            logger.info("✅ Self-Healing system started")
+    
+    def stop(self):
+        """Stop self-healing system"""
+        self.is_running = False
+        if self.task:
+            self.task.cancel()
+        logger.info("⏹️ Self-Healing system stopped")
+
+
+self_healing = SelfHealingSystem()
