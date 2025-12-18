@@ -2657,6 +2657,9 @@ try:
     from routes.system_health_endpoints import router as health_router
     from routes.admin_endpoints import router as admin_router
     from routes.bot_lifecycle import router as bot_lifecycle_router
+    from routes.system_limits import router as system_limits_router
+    from routes.live_trading_gate import router as live_gate_router
+    from routes.analytics_api import router as analytics_router
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2667,8 +2670,11 @@ try:
     app.include_router(health_router)
     app.include_router(admin_router)
     app.include_router(bot_lifecycle_router)
+    app.include_router(system_limits_router)
+    app.include_router(live_gate_router)
+    app.include_router(analytics_router)
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 

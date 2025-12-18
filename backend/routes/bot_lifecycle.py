@@ -18,6 +18,141 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/bots", tags=["Bot Lifecycle"])
 
 
+@router.post("/{bot_id}/start")
+async def start_bot(bot_id: str, user_id: str = Depends(get_current_user)):
+    """Start a bot's trading activity
+    
+    Args:
+        bot_id: Bot ID to start
+        user_id: Current user ID (from auth)
+        
+    Returns:
+        Updated bot status
+    """
+    try:
+        # Verify bot belongs to user
+        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check if already active
+        if bot.get('status') == 'active':
+            return {
+                "success": False,
+                "message": f"Bot '{bot['name']}' is already active",
+                "bot": bot
+            }
+        
+        # Start the bot
+        started_at = datetime.now(timezone.utc).isoformat()
+        
+        await bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "active",
+                    "started_at": started_at
+                },
+                "$unset": {
+                    "stopped_at": "",
+                    "paused_at": "",
+                    "pause_reason": "",
+                    "paused_by_user": "",
+                    "paused_by_system": "",
+                    "stop_reason": ""
+                }
+            }
+        )
+        
+        # Get updated bot
+        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Send real-time notification
+        await rt_events.bot_resumed(user_id, updated_bot)
+        
+        logger.info(f"✅ Bot {bot['name']} started by user {user_id[:8]}")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot['name']}' started successfully",
+            "bot": updated_bot
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Start bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{bot_id}/stop")
+async def stop_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depends(get_current_user)):
+    """Stop a bot's trading activity permanently
+    
+    Args:
+        bot_id: Bot ID to stop
+        data: Optional data with reason for stop
+        user_id: Current user ID (from auth)
+        
+    Returns:
+        Updated bot status
+    """
+    try:
+        # Verify bot belongs to user
+        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        if not bot:
+            raise HTTPException(status_code=404, detail="Bot not found")
+        
+        # Check if already stopped
+        if bot.get('status') == 'stopped':
+            return {
+                "success": False,
+                "message": f"Bot '{bot['name']}' is already stopped",
+                "bot": bot
+            }
+        
+        # Stop the bot
+        if data is None:
+            data = {}
+        reason = data.get('reason', 'Manual stop by user')
+        stopped_at = datetime.now(timezone.utc).isoformat()
+        
+        await bots_collection.update_one(
+            {"id": bot_id},
+            {
+                "$set": {
+                    "status": "stopped",
+                    "stopped_at": stopped_at,
+                    "stop_reason": reason
+                }
+            }
+        )
+        
+        # Get updated bot
+        updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+        
+        # Send real-time notification
+        await manager.send_message(user_id, {
+            "type": "bot_stopped",
+            "bot": updated_bot,
+            "message": f"⏹️ Bot '{bot['name']}' stopped"
+        })
+        
+        logger.info(f"✅ Bot {bot['name']} stopped by user {user_id[:8]}")
+        
+        return {
+            "success": True,
+            "message": f"Bot '{bot['name']}' stopped successfully",
+            "bot": updated_bot
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Stop bot error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{bot_id}/pause")
 async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depends(get_current_user)):
     """Pause a bot's trading activity
