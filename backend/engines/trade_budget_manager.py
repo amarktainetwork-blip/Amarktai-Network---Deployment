@@ -26,7 +26,7 @@ Exchange limits are sourced from official documentation:
 
 import asyncio
 from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from database import bots_collection, trades_collection
 from exchange_limits import EXCHANGE_LIMITS, get_exchange_limits
 import logging
@@ -132,7 +132,7 @@ class TradeBudgetManager:
         remaining = max(0, daily_budget - trades_today)
         return remaining
     
-    async def can_execute_trade(self, bot_id: str, exchange: str) -> tuple[bool, str]:
+    async def can_execute_trade(self, bot_id: str, exchange: str) -> Tuple[bool, str]:
         """Check if a bot can execute a trade within budget limits
         
         Args:
@@ -168,7 +168,7 @@ class TradeBudgetManager:
             logger.error(f"Budget check error for bot {bot_id}: {e}")
             return False, f"Error: {str(e)}"
     
-    async def _check_burst_limits(self, exchange: str) -> tuple[bool, str]:
+    async def _check_burst_limits(self, exchange: str) -> Tuple[bool, str]:
         """Check if exchange burst limits allow trading
         
         Burst protection prevents overwhelming exchanges with requests.

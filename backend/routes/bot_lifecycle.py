@@ -5,7 +5,7 @@ Handles pause, resume, cooldown periods, and bot lifecycle operations
 
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, timezone, timedelta
-from typing import Optional
+from typing import Optional, Dict
 import logging
 
 from auth import get_current_user
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/bots", tags=["Bot Lifecycle"])
 
 
 @router.post("/{bot_id}/pause")
-async def pause_bot(bot_id: str, data: dict = {}, user_id: str = Depends(get_current_user)):
+async def pause_bot(bot_id: str, data: Optional[Dict] = None, user_id: str = Depends(get_current_user)):
     """Pause a bot's trading activity
     
     Args:
@@ -45,6 +45,8 @@ async def pause_bot(bot_id: str, data: dict = {}, user_id: str = Depends(get_cur
             }
         
         # Pause the bot
+        if data is None:
+            data = {}
         reason = data.get('reason', 'Manual pause by user')
         paused_at = datetime.now(timezone.utc).isoformat()
         
@@ -305,7 +307,7 @@ async def get_bot_detailed_status(bot_id: str, user_id: str = Depends(get_curren
 
 
 @router.post("/pause-all")
-async def pause_all_bots(data: dict = {}, user_id: str = Depends(get_current_user)):
+async def pause_all_bots(data: Optional[Dict] = None, user_id: str = Depends(get_current_user)):
     """Pause all active bots for a user
     
     Args:
@@ -316,6 +318,8 @@ async def pause_all_bots(data: dict = {}, user_id: str = Depends(get_current_use
         Summary of paused bots
     """
     try:
+        if data is None:
+            data = {}
         reason = data.get('reason', 'Bulk pause by user')
         paused_at = datetime.now(timezone.utc).isoformat()
         
