@@ -2656,6 +2656,7 @@ try:
     from routes.wallet_endpoints import router as wallet_router
     from routes.system_health_endpoints import router as health_router
     from routes.admin_endpoints import router as admin_router
+    from routes.bot_lifecycle import router as bot_lifecycle_router
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2665,8 +2666,9 @@ try:
     app.include_router(wallet_router)
     app.include_router(health_router)
     app.include_router(admin_router)
+    app.include_router(bot_lifecycle_router)
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 
