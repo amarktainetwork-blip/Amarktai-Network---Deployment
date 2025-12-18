@@ -97,5 +97,60 @@ def test_live_gate_endpoints():
         assert expected in paths, f"Expected endpoint {expected} not found"
 
 
+def test_ai_chat_endpoints():
+    """Test AI chat endpoints are registered"""
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    
+    openapi = response.json()
+    paths = openapi.get("paths", {})
+    
+    expected_paths = [
+        "/api/ai/chat",
+        "/api/ai/chat/history",
+        "/api/ai/action/execute"
+    ]
+    
+    for expected in expected_paths:
+        assert expected in paths, f"Expected AI endpoint {expected} not found"
+
+
+def test_2fa_endpoints():
+    """Test 2FA endpoints are registered"""
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    
+    openapi = response.json()
+    paths = openapi.get("paths", {})
+    
+    expected_paths = [
+        "/api/auth/2fa/enroll",
+        "/api/auth/2fa/verify",
+        "/api/auth/2fa/disable",
+        "/api/auth/2fa/status"
+    ]
+    
+    for expected in expected_paths:
+        assert expected in paths, f"Expected 2FA endpoint {expected} not found"
+
+
+def test_genetic_algorithm_endpoints():
+    """Test genetic algorithm endpoints are registered"""
+    response = client.get("/openapi.json")
+    assert response.status_code == 200
+    
+    openapi = response.json()
+    paths = openapi.get("paths", {})
+    
+    expected_paths = [
+        "/api/genetic/evolve",
+        "/api/genetic/status",
+        "/api/genetic/crossover"
+    ]
+    
+    for expected in expected_paths:
+        assert expected in paths, f"Expected genetic endpoint {expected} not found"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

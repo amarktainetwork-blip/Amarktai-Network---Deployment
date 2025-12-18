@@ -2660,6 +2660,9 @@ try:
     from routes.system_limits import router as system_limits_router
     from routes.live_trading_gate import router as live_gate_router
     from routes.analytics_api import router as analytics_router
+    from routes.ai_chat import router as ai_chat_router
+    from routes.two_factor_auth import router as twofa_router
+    from routes.genetic_algorithm import router as genetic_router
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2673,8 +2676,11 @@ try:
     app.include_router(system_limits_router)
     app.include_router(live_gate_router)
     app.include_router(analytics_router)
+    app.include_router(ai_chat_router)
+    app.include_router(twofa_router)
+    app.include_router(genetic_router)
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm")
 except Exception as e:
     logger.warning(f"Could not load endpoints: {e}")
 

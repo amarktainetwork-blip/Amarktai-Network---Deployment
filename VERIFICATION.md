@@ -312,3 +312,137 @@ sudo journalctl -u amarktai-api -f | grep budget
 - Ensure you have a valid JWT token in `$AUTH_TOKEN`
 - All endpoints require authentication except `/api/health/ping`
 - WebSocket and SSE require token in query parameter
+
+## 12. AI Chat System
+
+### Send AI Chat Message
+```bash
+curl -X POST "$API_URL/api/ai/chat" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "content": "How are my bots performing?",
+    "request_action": false
+  }'
+# Expected: AI response with system state summary
+```
+
+### Get Chat History
+```bash
+curl -X GET "$API_URL/api/ai/chat/history?limit=50" \
+  -H "Authorization: Bearer $AUTH_TOKEN"
+# Expected: List of chat messages
+```
+
+### Execute AI Action
+```bash
+curl -X POST "$API_URL/api/ai/action/execute" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "get_limits",
+    "params": {}
+  }'
+# Expected: Action execution result
+```
+
+## 13. Two-Factor Authentication (2FA)
+
+### Enroll in 2FA
+```bash
+curl -X POST "$API_URL/api/auth/2fa/enroll" \
+  -H "Authorization: Bearer $AUTH_TOKEN"
+# Expected: QR code (base64), secret for manual entry
+```
+
+### Verify 2FA Enrollment
+```bash
+curl -X POST "$API_URL/api/auth/2fa/verify" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "123456"
+  }'
+# Expected: {"success":true,"message":"2FA has been successfully enabled"}
+```
+
+### Check 2FA Status
+```bash
+curl -X GET "$API_URL/api/auth/2fa/status" \
+  -H "Authorization: Bearer $AUTH_TOKEN"
+# Expected: {"enabled":true/false,"enrolled_at":"..."}
+```
+
+### Disable 2FA
+```bash
+curl -X POST "$API_URL/api/auth/2fa/disable" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "123456",
+    "password": "your_password"
+  }'
+# Expected: {"success":true,"message":"2FA has been disabled"}
+```
+
+## 14. Genetic Algorithm / Bot DNA Evolution
+
+### Evolve Bots
+```bash
+curl -X POST "$API_URL/api/genetic/evolve" \
+  -H "Authorization: Bearer $AUTH_TOKEN"
+# Expected: {"success":true,"evolved_count":N,"generation":M}
+```
+
+### Get Evolution Status
+```bash
+curl -X GET "$API_URL/api/genetic/status" \
+  -H "Authorization: Bearer $AUTH_TOKEN"
+# Expected: DNA diversity metrics, generation info
+```
+
+### Manual Bot Mutation
+```bash
+curl -X POST "$API_URL/api/genetic/mutate/{bot_id}" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mutation_strength": 0.15
+  }'
+# Expected: Mutated bot details
+```
+
+### Create Offspring via Crossover
+```bash
+curl -X POST "$API_URL/api/genetic/crossover" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent1_id": "bot_id_1",
+    "parent2_id": "bot_id_2",
+    "name": "Evolved Bot",
+    "apply_mutation": true
+  }'
+# Expected: New bot created from parent DNA
+```
+
+### Enable Auto-Evolution
+```bash
+curl -X POST "$API_URL/api/genetic/auto-evolve/enable" \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "interval_hours": 24,
+    "min_bots": 10
+  }'
+# Expected: {"success":true,"message":"Automatic evolution enabled"}
+```
+
+## Additional Success Criteria
+
+✅ AI chat responds with system context  
+✅ 2FA enrollment generates QR code  
+✅ 2FA verification enables protection  
+✅ Genetic algorithm evolves weak bots  
+✅ Bot DNA crossover creates offspring  
+✅ Frontend components render correctly  
