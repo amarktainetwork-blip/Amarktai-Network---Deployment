@@ -79,10 +79,7 @@ agenthub/agents/youtube/db
 # Mobile development
 android-sdk/
 
-# Environment files
+# Environment files (but allow .env.example)
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
+!.env.example
