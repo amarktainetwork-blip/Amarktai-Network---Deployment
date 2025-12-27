@@ -63,9 +63,9 @@ class AutopilotEngine:
         logger.info("🤖 Autopilot Engine started")
         
     async def daily_reinvestment_cycle(self):
-        """Daily profit reinvestment at 23:59 UTC"""
+        """Daily profit reinvestment at 23:59 UTC - LEDGER-BASED"""
         try:
-            logger.info("💰 Starting daily reinvestment cycle...")
+            logger.info("💰 Starting daily reinvestment cycle (ledger-based)...")
             
             # Get all users with autopilot enabled
             users = await self.db.users.find({'autopilot_enabled': True}).to_list(1000)
@@ -73,25 +73,43 @@ class AutopilotEngine:
             for user in users:
                 user_id = user['id']
                 
-                # Calculate total profit (AFTER FEES)
-                bots = await self.db.bots.find({'user_id': user_id}).to_list(1000)
-                
-                # Account for trading fees (0.1% per trade typical)
-                total_profit_after_fees = 0
-                for bot in bots:
-                    bot_profit = bot.get('total_profit', 0)
-                    trades_count = bot.get('trades_count', 0)
+                # NEW: Use ledger for accurate profit calculation
+                try:
+                    from services.ledger_service import get_ledger_service
+                    ledger = get_ledger_service(self.db)
                     
-                    # Estimate fees: 0.1% per trade (buy + sell = 0.2% per round trip)
-                    estimated_fees = trades_count * 0.002 * bot.get('current_capital', 1000)
-                    net_profit = bot_profit - estimated_fees
-                    total_profit_after_fees += net_profit
+                    # Get realized PnL and fees from ledger
+                    realized_pnl = await ledger.compute_realized_pnl(user_id)
+                    fees_paid = await ledger.compute_fees_paid(user_id)
+                    
+                    # Net profit after fees (single source of truth)
+                    total_profit_after_fees = realized_pnl - fees_paid
+                    
+                    logger.info(f"User {user_id}: Ledger PnL={realized_pnl:.2f}, Fees={fees_paid:.2f}, Net={total_profit_after_fees:.2f}")
+                    
+                except Exception as ledger_error:
+                    # Fallback to bot-based calculation
+                    logger.warning(f"Ledger unavailable for user {user_id}, using bot-based: {ledger_error}")
+                    
+                    bots = await self.db.bots.find({'user_id': user_id}).to_list(1000)
+                    
+                    # Account for trading fees (0.1% per trade typical)
+                    total_profit_after_fees = 0
+                    for bot in bots:
+                        bot_profit = bot.get('total_profit', 0)
+                        trades_count = bot.get('trades_count', 0)
+                        
+                        # Estimate fees: 0.1% per trade (buy + sell = 0.2% per round trip)
+                        estimated_fees = trades_count * 0.002 * bot.get('current_capital', 1000)
+                        net_profit = bot_profit - estimated_fees
+                        total_profit_after_fees += net_profit
                 
                 if total_profit_after_fees < 0:
                     logger.info(f"User {user_id}: Negative profit after fees, skipping reinvestment")
                     continue
                 
                 # Get bot count
+                bots = await self.db.bots.find({'user_id': user_id}).to_list(1000)
                 bot_count = len(bots)
                 max_bots = int(os.getenv('MAX_BOTS', 30))
                 
@@ -109,7 +127,7 @@ class AutopilotEngine:
                     'user_id': user_id,
                     'type': 'autopilot',
                     'severity': 'low',
-                    'message': f'Daily reinvestment complete. Profit: R{total_profit:.2f}',
+                    'message': f'Daily reinvestment complete. Net profit: R{total_profit_after_fees:.2f}',
                     'timestamp': datetime.now(timezone.utc).isoformat(),
                     'dismissed': False
                 })
