@@ -2783,6 +2783,7 @@ try:
     from routes.order_endpoints import router as order_router  # Phase 2: Order pipeline with guardrails
     from routes.alerts import router as alerts_router
     from routes.limits_management import router as limits_router  # NEW: Limits management
+    from routes.advanced_trading_endpoints import router as advanced_router  # Advanced Trading System
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2805,6 +2806,7 @@ try:
     app.include_router(ledger_router)  # Phase 1: Ledger endpoints
     app.include_router(order_router)  # Phase 2: Order pipeline endpoints
     app.include_router(limits_router)  # Limits management endpoints
+    app.include_router(advanced_router)  # Advanced Trading System endpoints
     
     # Start daily report scheduler
     daily_report_service.start()
