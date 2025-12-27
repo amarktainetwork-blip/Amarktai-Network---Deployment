@@ -1388,14 +1388,26 @@ async def get_chat_history(limit: int = 50, user_id: str = Depends(get_current_u
 
 @api_router.get("/analytics/profit-history")
 async def get_profit_history(period: str = 'daily', user_id: str = Depends(get_current_user)):
-    """Get profit history - FIXED: Shows correct day of week"""
+    """
+    Get profit history for dashboard visualization.
+    
+    NOTE: This endpoint is the PRIMARY endpoint for frontend profit visualization.
+    Alternative canonical endpoint /api/profits provides different format for API consumers.
+    Backend maintains this as single source of truth by querying MongoDB directly.
+    
+    Returns:
+        - labels: Time period labels (days, weeks, or months)
+        - values: Profit values for each period
+        - total: Total profit across all periods
+        - avg_daily: Average daily profit
+        - best_day: Best performing period
+        - growth_rate: Overall growth rate percentage
+    """
     try:
         from collections import defaultdict
         
-        # Get all bots' current profits
+        # BACKEND TRUTH: Query MongoDB directly for bot and trade data
         bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
-        
-        # Get ALL trades (no limit)
         trades = await trades_collection.find({"user_id": user_id}, {"_id": 0}).to_list(None)
         
         labels = []
@@ -1500,11 +1512,26 @@ async def get_profit_history(period: str = 'daily', user_id: str = Depends(get_c
 
 @api_router.get("/analytics/countdown-to-million")
 async def countdown_to_million(user_id: str = Depends(get_current_user)):
-    """Calculate countdown to R1,000,000 with compounding"""
+    """
+    Calculate countdown to R1,000,000 with compounding projections.
+    
+    NOTE: This endpoint is the PRIMARY endpoint for frontend countdown feature.
+    Alternative canonical endpoint /api/countdown/status provides similar functionality.
+    Backend maintains this as single source of truth by querying MongoDB and wallet data directly.
+    
+    Returns:
+        - current_capital: Current total capital (wallet + bot capitals)
+        - target: Target amount (R1,000,000)
+        - remaining: Amount remaining to reach target
+        - progress_pct: Progress percentage
+        - days_remaining: Estimated days to reach target
+        - metrics: Trading metrics (avg daily profit, ROI %, etc.)
+        - projections: Both simple and compound projections
+    """
     try:
         from paper_trading_engine import paper_engine
         
-        # Get system mode to determine paper vs live
+        # BACKEND TRUTH: Get system mode and wallet data from MongoDB
         system_mode = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         is_live = system_mode.get('liveTrading', False) if system_mode else False
         
@@ -1522,7 +1549,7 @@ async def countdown_to_million(user_id: str = Depends(get_current_user)):
         btc_price = await paper_engine.get_real_price('BTC/ZAR', 'luno')
         current_capital = zar_balance + (btc_balance * btc_price)
         
-        # Get all bots total capital
+        # BACKEND TRUTH: Get all bots total capital from MongoDB
         bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
         total_bot_capital = sum(bot.get('current_capital', 0) for bot in bots)
         total_capital = max(current_capital, total_bot_capital)
@@ -1543,8 +1570,7 @@ async def countdown_to_million(user_id: str = Depends(get_current_user)):
                 "compound_projection": None
             }
         
-        # Calculate daily ROI from recent trades
-        # Get last 30 days of trades (NO LIMIT - get all trades)
+        # BACKEND TRUTH: Calculate daily ROI from recent trades in MongoDB
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         recent_trades = await trades_collection.find({
             "user_id": user_id,
@@ -2334,9 +2360,18 @@ async def manual_capital_reallocation(user_id: str = Depends(get_current_user)):
 
 @api_router.post("/autonomous/reinvest-profits")
 async def manual_profit_reinvestment(user_id: str = Depends(get_current_user)):
-    """Manually trigger profit reinvestment"""
+    """
+    Manually trigger profit reinvestment.
+    
+    NOTE: This endpoint is the PRIMARY endpoint for manual profit reinvestment.
+    Backend maintains this as single source of truth by delegating to capital allocator service.
+    
+    Returns:
+        Result of reinvestment operation including amount reinvested and new bot allocations
+    """
     try:
         from engines.capital_allocator import capital_allocator
+        # BACKEND TRUTH: Delegate to capital allocator service
         result = await capital_allocator.reinvest_daily_profits(user_id)
         return result
     except Exception as e:

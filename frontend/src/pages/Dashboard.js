@@ -563,14 +563,14 @@ export default function Dashboard() {
 
   const loadMetrics = async () => {
     try {
-      const res = await axios.get(`${API}/metrics`, axiosConfig);
+      const res = await axios.get(`${API}/portfolio/summary`, axiosConfig);
       setMetrics({
-        totalProfit: `R${res.data.total_profit?.toFixed(2) || '0.00'}`,
+        totalProfit: `R${res.data.net_pnl?.toFixed(2) || '0.00'}`,
         activeBots: `${res.data.active_bots || 0} / ${res.data.total_bots || 0}`,
         exposure: `${res.data.exposure?.toFixed(1) || 0}%`,
         riskLevel: res.data.risk_level || 'Unknown',
         aiSentiment: res.data.ai_sentiment || 'Neutral',
-        lastUpdate: new Date(res.data.last_update).toLocaleTimeString() || '—'
+        lastUpdate: new Date().toLocaleTimeString() || '—'
       });
     } catch (err) {
       console.error('Metrics fetch error:', err);
@@ -667,7 +667,7 @@ export default function Dashboard() {
 
   const loadProfitData = async () => {
     try {
-      const res = await axios.get(`${API}/analytics/profit-history?period=${graphPeriod}`, axiosConfig);
+      const res = await axios.get(`${API}/profits?period=${graphPeriod}`, axiosConfig);
       setProfitData(res.data);
     } catch (err) {
       console.error('Profit data error:', err);
@@ -1102,7 +1102,7 @@ export default function Dashboard() {
     }
 
     try {
-      await axios.post(`${API}/api-keys`, data, axiosConfig);
+      await axios.post(`${API}/keys/save`, data, axiosConfig);
       showNotification(`✅ ${provider.toUpperCase()} API key saved!`);
       loadApiStatuses();
       
@@ -1116,7 +1116,7 @@ export default function Dashboard() {
 
   const handleTestApiKey = async (provider) => {
     try {
-      await axios.post(`${API}/api-keys/${provider}/test`, {}, axiosConfig);
+      await axios.post(`${API}/keys/test`, { provider }, axiosConfig);
       showNotification(`${provider} connection verified!`);
       loadApiStatuses();
     } catch (err) {
