@@ -329,6 +329,215 @@ python -m pytest tests/test_ledger_phase1.py -v
 4. **Read-only**: Endpoints are safe to deploy
 5. **Deterministic**: Math is reproducible and testable
 
+#### Ledger Integration Points
+
+The following systems now use ledger as single source of truth:
+
+1. **Autopilot Reinvestment**: Uses `compute_realized_pnl()` and `compute_fees_paid()` for accurate profit calculation
+2. **Circuit Breaker**: Uses `compute_drawdown()` for real-time drawdown monitoring
+3. **Daily Reports**: Uses ledger metrics for email reports with fallback
+4. **Dashboard**: Portfolio summary endpoint sources from ledger
+5. **AI Commands**: Portfolio display uses ledger data
+
+## 🛡️ Order Pipeline & Execution Guardrails
+
+### 4-Gate System
+
+All orders pass through a unified pipeline with these gates:
+
+1. **Idempotency Gate**
+   - Prevents duplicate order submissions
+   - Uses unique `idempotency_key` with database constraint
+   - Returns existing order if key already exists
+
+2. **Fee Coverage Gate**
+   - Calculates total costs: maker/taker fees + spread + slippage + safety margin
+   - Rejects orders where expected edge doesn't cover costs
+   - Configurable via `MIN_EDGE_BPS`, `SAFETY_MARGIN_BPS`, `SLIPPAGE_BUFFER_BPS`
+
+3. **Trade Limiter Gate**
+   - Enforces daily limits per bot and per user
+   - Burst protection (e.g., max 10 orders/10 seconds per exchange)
+   - Configurable via environment variables
+
+4. **Circuit Breaker Gate**
+   - Monitors drawdown, daily loss, consecutive losses, error rate
+   - Pauses or QUARANTINES bots when thresholds exceeded
+   - QUARANTINED bots require manual reset
+
+### Configuration
+
+Set these environment variables in `.env`:
+
+```bash
+# Trade Limits
+MAX_TRADES_PER_BOT_DAILY=50
+MAX_TRADES_PER_USER_DAILY=500
+BURST_LIMIT_ORDERS_PER_EXCHANGE=10
+BURST_LIMIT_WINDOW_SECONDS=10
+
+# Circuit Breaker Thresholds
+MAX_DRAWDOWN_PERCENT=0.20  # 20%
+MAX_DAILY_LOSS_PERCENT=0.10  # 10%
+MAX_CONSECUTIVE_LOSSES=5
+MAX_ERRORS_PER_HOUR=10
+
+# Fee Coverage
+MIN_EDGE_BPS=10  # Minimum 10 basis points edge
+SAFETY_MARGIN_BPS=5
+SLIPPAGE_BUFFER_BPS=10
+```
+
+### Limits Management Endpoints
+
+Monitor and manage trading limits:
+
+```bash
+# View current configuration
+GET /api/limits/config
+
+# Check usage against limits
+GET /api/limits/usage
+GET /api/limits/usage?bot_id=xxx
+
+# View quarantined bots
+GET /api/limits/quarantined
+
+# Reset quarantined bot (user action)
+POST /api/limits/quarantine/reset/{bot_id}
+
+# Check circuit breaker status
+POST /api/limits/circuit-breaker/check
+POST /api/limits/circuit-breaker/check?bot_id=xxx
+
+# Get overall health
+GET /api/limits/health
+```
+
+## 🤖 AI Command Router
+
+Control your trading system via natural language chat:
+
+### Available Commands
+
+#### Bot Lifecycle
+- `start bot <name>` - Start a bot
+- `pause bot <name>` - Pause a bot
+- `resume bot <name>` - Resume a paused bot
+- `stop bot <name>` - Stop a bot permanently
+- `pause all bots` - Pause all your bots
+- `resume all bots` - Resume all paused bots
+
+#### Emergency
+- `emergency stop` - Halt all trading (requires confirmation)
+
+#### Status & Info
+- `show portfolio` - Display portfolio summary from ledger
+- `show profits` - Display profit series
+- `status of bot <name>` - Get bot status and metrics
+
+#### Autopilot
+- `reinvest` - Trigger reinvestment cycle (paper mode only, requires confirmation)
+
+#### Admin (Admin-only)
+- `send test report` - Send test email report
+
+### Command Confirmation
+
+Trading-related commands require confirmation:
+1. Issue command (e.g., "emergency stop")
+2. System asks for confirmation
+3. Respond with "yes" or "confirm"
+4. Command executes
+
+### Real-time Feedback
+
+Command results are sent via WebSocket with structured data:
+- Success/failure status
+- Human-readable message
+- Structured data for UI display
+- Command metadata
+
+## 📧 Daily SMTP Reports
+
+Automated daily email reports with:
+- Yesterday's profit/loss (from ledger)
+- Bot status breakdown
+- Top errors and alerts
+- Drawdown metrics
+- Fee totals
+
+### Configuration
+
+```bash
+# In .env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM_EMAIL=your-email@gmail.com
+DAILY_REPORT_TIME=08:00  # 8 AM UTC
+```
+
+### Testing
+
+```bash
+# Send test report to yourself
+POST /api/reports/daily/send-test
+
+# Admin: Send to all users
+POST /api/reports/daily/send-all
+```
+
+## 🔒 Paper vs Live Trading Gates
+
+### Paper Trading Mode
+- **Default mode** for new bots
+- Simulates trades with real market data
+- No financial risk
+- Full feature access except live orders
+
+### Live Trading Mode
+- Requires 7-day paper training minimum
+- Must meet promotion criteria:
+  - Win rate ≥ 52%
+  - Profit ≥ 3%
+  - Trades ≥ 25
+- API keys must be configured
+- All guardrails active (limits, breaker, fee coverage)
+
+### Promotion Process
+
+1. Bot trades in paper mode for 7+ days
+2. System checks criteria hourly
+3. If eligible, bot can be promoted via:
+   - `/api/bots/{id}/promote` endpoint
+   - AI command: Not available (manual only for safety)
+4. Bot switches to live mode with reset capital
+
+## 🛡️ Circuit Breaker States
+
+### Bot States
+
+1. **Active** - Normal trading
+2. **Paused** - Temporarily stopped, can resume
+3. **QUARANTINED** - Critical breach, requires manual reset
+4. **Stopped** - Permanently stopped
+
+### Quarantine Triggers
+
+Bots enter QUARANTINED state on:
+- Drawdown > 20% (configurable)
+- Consecutive losses ≥ 5 (configurable)
+
+### Manual Reset
+
+To reset a quarantined bot:
+1. Investigate the cause
+2. Call `POST /api/limits/quarantine/reset/{bot_id}`
+3. Bot moves to PAUSED state
+4. Manually resume when ready
+
 #### Next: Phase 2 (Execution Guardrails)
 
 Phase 2 will add:
