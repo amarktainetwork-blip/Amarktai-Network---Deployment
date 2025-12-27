@@ -84,5 +84,8 @@ agenthub/agents/youtube/db
 android-sdk/
 -e 
 # Environment files
+
+# Environment files (but allow .env.example)
 *.env
 *.env.*
+!.env.example
