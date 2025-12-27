@@ -637,6 +637,123 @@ class OrderPipeline:
         except Exception as e:
             logger.error(f"Error getting order status: {e}")
             return None
+    
+    async def record_fill_execution(
+        self,
+        order_id: str,
+        filled_price: float,
+        filled_qty: float,
+        actual_fee: float,
+        fee_currency: str,
+        exchange_trade_id: Optional[str] = None,
+        timestamp: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Record actual fill execution with real slippage and fees.
+        
+        This should be called after order execution to record actual execution details.
+        
+        Args:
+            order_id: Order ID from submit_order
+            filled_price: Actual fill price received
+            filled_qty: Actual quantity filled
+            actual_fee: Actual fee charged by exchange
+            fee_currency: Currency of fee (e.g., 'ZAR', 'BTC')
+            exchange_trade_id: Exchange's trade ID
+            timestamp: Fill timestamp (defaults to now)
+        
+        Returns:
+            {
+                "success": bool,
+                "fill_id": str,
+                "slippage_bps": float,  # Actual slippage compared to expected
+                "total_cost_bps": float  # Actual total cost
+            }
+        """
+        try:
+            # Get pending order
+            order = await self.pending_orders.find_one({"order_id": order_id})
+            if not order:
+                return {"success": False, "error": "Order not found"}
+            
+            # Calculate actual slippage
+            expected_price = order.get("price") or filled_price
+            slippage_bps = abs((filled_price - expected_price) / expected_price * 10000) if abs(expected_price) > 0 else 0
+            
+            # Calculate actual fee in basis points
+            notional_value = filled_price * filled_qty
+            actual_fee_bps = (actual_fee / notional_value * 10000) if notional_value > 0 else 0
+            
+            # Get expected costs from execution summary
+            execution_summary = order.get("execution_summary", {})
+            expected_fee_bps = execution_summary.get("fee_bps", 0)
+            expected_slippage_bps = execution_summary.get("slippage_bps", 0)
+            
+            # Record fill to ledger with metadata
+            metadata = {
+                "expected_price": expected_price,
+                "filled_price": filled_price,
+                "expected_fee_bps": expected_fee_bps,
+                "actual_fee_bps": actual_fee_bps,
+                "expected_slippage_bps": expected_slippage_bps,
+                "actual_slippage_bps": slippage_bps,
+                "execution_summary": execution_summary,
+                "order_type": order.get("order_type"),
+                "gates_passed": order.get("gates_passed", [])
+            }
+            
+            fill_id = await self.ledger.append_fill(
+                user_id=order["user_id"],
+                bot_id=order["bot_id"],
+                exchange=order["exchange"],
+                symbol=order["symbol"],
+                side=order["side"],
+                qty=filled_qty,
+                price=filled_price,
+                fee=actual_fee,
+                fee_currency=fee_currency,
+                timestamp=timestamp or datetime.utcnow(),
+                order_id=order_id,
+                client_order_id=order.get("idempotency_key"),
+                exchange_trade_id=exchange_trade_id,
+                is_paper=order.get("is_paper", True),
+                metadata=metadata
+            )
+            
+            # Update order status
+            await self.pending_orders.update_one(
+                {"order_id": order_id},
+                {
+                    "$set": {
+                        "state": "filled",
+                        "filled_at": timestamp or datetime.utcnow(),
+                        "fill_id": fill_id,
+                        "filled_price": filled_price,
+                        "filled_qty": filled_qty,
+                        "actual_fee": actual_fee,
+                        "actual_slippage_bps": slippage_bps,
+                        "actual_fee_bps": actual_fee_bps,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+            
+            logger.info(
+                f"Recorded fill {fill_id} for order {order_id}: "
+                f"slippage={slippage_bps:.2f}bps, fee={actual_fee_bps:.2f}bps"
+            )
+            
+            return {
+                "success": True,
+                "fill_id": fill_id,
+                "slippage_bps": slippage_bps,
+                "actual_fee_bps": actual_fee_bps,
+                "total_cost_bps": slippage_bps + actual_fee_bps
+            }
+            
+        except Exception as e:
+            logger.error(f"Error recording fill execution: {e}")
+            return {"success": False, "error": str(e)}
 
 
 # Singleton instance
