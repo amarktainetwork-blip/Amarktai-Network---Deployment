@@ -36,11 +36,22 @@ class DailyReportService:
     async def generate_report_html(self, user_id: str) -> str:
         """Generate HTML report for a user using LEDGER DATA
         
+        This method prioritizes ledger data as the single source of truth for all metrics.
+        If ledger data is unavailable, it falls back to bot-based calculations to ensure
+        reports can always be generated.
+        
+        Ledger-based metrics include:
+        - Total equity (from compute_equity)
+        - Realized PnL (from compute_realized_pnl)  
+        - Fees paid (from compute_fees_paid)
+        - Drawdown (from compute_drawdown)
+        - Yesterday's profit (from profit_series)
+        
         Args:
             user_id: User ID to generate report for
             
         Returns:
-            HTML formatted report
+            HTML formatted report or None if user not found
         """
         try:
             # Get user info
