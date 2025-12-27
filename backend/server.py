@@ -2756,6 +2756,24 @@ async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
         logger.error(f"Emergency stop failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================================
+# PROMETHEUS METRICS ENDPOINT
+# ============================================================================
+
+@api_router.get("/metrics")
+async def get_prometheus_metrics():
+    """Expose Prometheus metrics for Grafana"""
+    try:
+        from engines.prometheus_metrics import prometheus_metrics
+        from fastapi.responses import Response
+        
+        content, content_type = prometheus_metrics.export_metrics()
+        return Response(content=content, media_type=content_type)
+        
+    except Exception as e:
+        logger.error(f"Metrics export failed: {e}")
+        raise HTTPException(status_code=500, detail="Metrics export failed")
+
 # Mount API router
 app.include_router(api_router, prefix="/api")
 
