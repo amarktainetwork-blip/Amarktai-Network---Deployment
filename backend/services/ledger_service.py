@@ -220,7 +220,7 @@ class LedgerService:
     
     async def compute_realized_pnl(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
@@ -230,10 +230,17 @@ class LedgerService:
         Compute realized PnL from closed positions
         
         Method: Match buys and sells using FIFO
+        
+        Can compute for user_id or bot_id
         """
-        query = {"user_id": user_id}
-        if bot_id:
-            query["bot_id"] = bot_id
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
+        query = {target_field: target_id}
         if since or until:
             query["timestamp"] = {}
             if since:
@@ -290,7 +297,7 @@ class LedgerService:
     
     async def compute_unrealized_pnl(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         currency: str = "USDT"
     ) -> float:
@@ -299,6 +306,8 @@ class LedgerService:
         
         Note: Requires current market prices (not implemented in Phase 1)
         Returns 0 for now as this requires price feed integration
+        
+        Can compute for user_id or bot_id
         """
         # TODO: Implement with price feed in Phase 2
         logger.debug(f"Unrealized PnL calculation not implemented yet (requires price feed)")
@@ -306,16 +315,25 @@ class LedgerService:
     
     async def compute_fees_paid(
         self,
-        user_id: str,
+        user_id: Optional[str] = None,
         bot_id: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
         currency: str = "USDT"
     ) -> float:
-        """Compute total fees paid from fills"""
-        query = {"user_id": user_id}
-        if bot_id:
-            query["bot_id"] = bot_id
+        """
+        Compute total fees paid from fills
+        
+        Can compute for user_id or bot_id
+        """
+        # Determine the query target
+        target_id = user_id or bot_id
+        target_field = "user_id" if user_id else "bot_id"
+        
+        if not target_id:
+            raise ValueError("Must provide either user_id or bot_id")
+        
+        query = {target_field: target_id}
         if since or until:
             query["timestamp"] = {}
             if since:
