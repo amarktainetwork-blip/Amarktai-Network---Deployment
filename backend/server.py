@@ -1236,10 +1236,11 @@ async def get_storage_usage(user_id: str = Depends(get_current_user)):
 
 @api_router.post("/chat")
 async def send_chat_message(message: dict, user_id: str = Depends(get_current_user)):
-    """Send message to AI and get response with conversation context - FIXED PERSONALIZATION"""
+    """Send message to AI and get response with conversation context - FIXED PERSONALIZATION + AI COMMAND ROUTER"""
     try:
         content = message.get('content', '')
         content_lower = content.lower().strip()
+        confirmed = message.get('confirmed', False)
         
         # CRITICAL: Block admin commands COMPLETELY - DO NOT process, save, or respond
         # Frontend handles these with password prompt
@@ -1248,10 +1249,71 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
             # Return empty response - frontend won't process this anyway
             return ""
         
-        # Get user details for personalization
+        # Get user details for personalization and admin check
         user = await users_collection.find_one({"id": user_id}, {"_id": 0})
         first_name = user.get('first_name', 'User') if user else 'User'
+        is_admin = user.get('is_admin', False) if user else False
         
+        # NEW: Try AI Command Router first
+        from services.ai_command_router import get_ai_command_router
+        command_router = get_ai_command_router(db)
+        is_command, command_result = await command_router.parse_and_execute(
+            user_id, content, confirmed=confirmed, is_admin=is_admin
+        )
+        
+        if is_command:
+            # Save user message
+            user_msg = ChatMessage(
+                user_id=user_id,
+                role="user",
+                content=content
+            )
+            user_msg_dict = user_msg.model_dump()
+            user_msg_dict['timestamp'] = user_msg_dict['timestamp'].isoformat()
+            await chat_messages_collection.insert_one(user_msg_dict)
+            
+            # Format command result as response
+            if command_result.get('success'):
+                ai_response = command_result.get('message', 'Command executed')
+                # Include structured data for UI
+                if command_result.get('bot'):
+                    ai_response += f"\n\nBot Details:\n"
+                    for key, value in command_result['bot'].items():
+                        ai_response += f"- {key}: {value}\n"
+                elif command_result.get('portfolio'):
+                    ai_response += f"\n\nPortfolio:\n"
+                    for key, value in command_result['portfolio'].items():
+                        ai_response += f"- {key}: {value}\n"
+                elif command_result.get('profits'):
+                    profits = command_result['profits']
+                    ai_response += f"\n\nTotal: R{profits['total']}"
+            else:
+                ai_response = command_result.get('message', 'Command failed')
+                if command_result.get('requires_confirmation'):
+                    ai_response += "\n\nType 'yes' or 'confirm' to proceed."
+            
+            # Save AI response
+            ai_msg = ChatMessage(
+                user_id=user_id,
+                role="assistant",
+                content=ai_response
+            )
+            ai_msg_dict = ai_msg.model_dump()
+            ai_msg_dict['timestamp'] = ai_msg_dict['timestamp'].isoformat()
+            ai_msg_dict['command_result'] = command_result  # Include structured data
+            await chat_messages_collection.insert_one(ai_msg_dict)
+            
+            # Send via WebSocket with command result
+            await manager.send_message(user_id, {
+                "type": "chat_message",
+                "message": ai_msg_dict,
+                "command_executed": True,
+                "command_result": command_result
+            })
+            
+            return ai_response
+        
+        # Not a command - proceed with regular AI chat
         # Get recent conversation history (last 10 messages)
         recent_messages = await chat_messages_collection.find(
             {"user_id": user_id},
@@ -2678,6 +2740,7 @@ try:
     from routes.ledger_endpoints import router as ledger_router  # Phase 1: Ledger-first accounting
     from routes.order_endpoints import router as order_router  # Phase 2: Order pipeline with guardrails
     from routes.alerts import router as alerts_router
+    from routes.limits_management import router as limits_router  # NEW: Limits management
     
     app.include_router(phase5_router)
     app.include_router(phase6_router)
@@ -2699,11 +2762,12 @@ try:
     app.include_router(daily_report_router)
     app.include_router(ledger_router)  # Phase 1: Ledger endpoints
     app.include_router(order_router)  # Phase 2: Order pipeline endpoints
+    app.include_router(limits_router)  # Limits management endpoints
     
     # Start daily report scheduler
     daily_report_service.start()
     
-    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders")
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports, Ledger, Orders, Limits Management")
     app.include_router(alerts_router)
     
     logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Alerts")
