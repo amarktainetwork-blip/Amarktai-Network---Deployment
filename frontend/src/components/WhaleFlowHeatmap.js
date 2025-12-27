@@ -38,6 +38,14 @@ export default function WhaleFlowHeatmap() {
   const [timeRange, setTimeRange] = useState('1h'); // 1h, 6h, 24h
   const [autoRefresh, setAutoRefresh] = useState(true);
 
+  // Format amount based on coin type
+  const formatAmount = (amount, coin) => {
+    if (!amount) return '0';
+    if (coin === 'BTC') return amount.toFixed(2);
+    if (coin === 'ETH') return amount.toFixed(0);
+    return amount.toLocaleString();
+  };
+
   // Fetch whale flow data
   const fetchWhaleData = async () => {
     try {
@@ -297,28 +305,28 @@ export default function WhaleFlowHeatmap() {
             <div className="stat-card">
               <p className="text-sm text-gray-500">Total Inflow</p>
               <p className="text-xl font-bold text-green-600">
-                {selectedCoin === 'BTC' && `${whaleData.summary[selectedCoin]?.total_inflow?.toFixed(2) || 0} BTC`}
-                {selectedCoin === 'ETH' && `${whaleData.summary[selectedCoin]?.total_inflow?.toFixed(0) || 0} ETH`}
+                {selectedCoin === 'BTC' && `${formatAmount(whaleData.summary[selectedCoin]?.total_inflow, 'BTC')} BTC`}
+                {selectedCoin === 'ETH' && `${formatAmount(whaleData.summary[selectedCoin]?.total_inflow, 'ETH')} ETH`}
                 {(selectedCoin === 'USDT' || selectedCoin === 'USDC') && 
-                  `$${whaleData.summary[selectedCoin]?.total_inflow?.toLocaleString() || 0}`}
+                  `$${formatAmount(whaleData.summary[selectedCoin]?.total_inflow, 'USD')}`}
               </p>
             </div>
             <div className="stat-card">
               <p className="text-sm text-gray-500">Total Outflow</p>
               <p className="text-xl font-bold text-red-600">
-                {selectedCoin === 'BTC' && `${whaleData.summary[selectedCoin]?.total_outflow?.toFixed(2) || 0} BTC`}
-                {selectedCoin === 'ETH' && `${whaleData.summary[selectedCoin]?.total_outflow?.toFixed(0) || 0} ETH`}
+                {selectedCoin === 'BTC' && `${formatAmount(whaleData.summary[selectedCoin]?.total_outflow, 'BTC')} BTC`}
+                {selectedCoin === 'ETH' && `${formatAmount(whaleData.summary[selectedCoin]?.total_outflow, 'ETH')} ETH`}
                 {(selectedCoin === 'USDT' || selectedCoin === 'USDC') && 
-                  `$${whaleData.summary[selectedCoin]?.total_outflow?.toLocaleString() || 0}`}
+                  `$${formatAmount(whaleData.summary[selectedCoin]?.total_outflow, 'USD')}`}
               </p>
             </div>
             <div className={`stat-card ${getNetFlowColor(whaleData.summary[selectedCoin]?.net_flow)}`}>
               <p className="text-sm">Net Flow</p>
               <p className="text-xl font-bold">
-                {selectedCoin === 'BTC' && `${whaleData.summary[selectedCoin]?.net_flow?.toFixed(2) || 0} BTC`}
-                {selectedCoin === 'ETH' && `${whaleData.summary[selectedCoin]?.net_flow?.toFixed(0) || 0} ETH`}
+                {selectedCoin === 'BTC' && `${formatAmount(whaleData.summary[selectedCoin]?.net_flow, 'BTC')} BTC`}
+                {selectedCoin === 'ETH' && `${formatAmount(whaleData.summary[selectedCoin]?.net_flow, 'ETH')} ETH`}
                 {(selectedCoin === 'USDT' || selectedCoin === 'USDC') && 
-                  `$${whaleData.summary[selectedCoin]?.net_flow?.toLocaleString() || 0}`}
+                  `$${formatAmount(whaleData.summary[selectedCoin]?.net_flow, 'USD')}`}
               </p>
               {whaleData.signals && whaleData.signals[selectedCoin] && (
                 <div className="mt-2">

@@ -306,7 +306,7 @@ export default function PrometheusMetrics() {
                         <span className="font-medium capitalize">
                           {component.replace(/_/g, ' ')}
                         </span>
-                        <Badge variant={health >= 0.9 ? 'default' : health >= 0.7 ? 'warning' : 'destructive'}>
+                        <Badge variant={health >= 0.9 ? 'default' : health >= 0.7 ? 'outline' : 'destructive'}>
                           {(health * 100).toFixed(0)}%
                         </Badge>
                       </div>

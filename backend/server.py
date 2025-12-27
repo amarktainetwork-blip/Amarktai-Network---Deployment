@@ -242,44 +242,51 @@ async def decision_trace_websocket(websocket: WebSocket):
         import json
         from datetime import datetime
         
+        # Send initial connection confirmation
+        await websocket.send_text(json.dumps({"status": "connected"}))
+        
         while True:
-            # In production, this would come from the actual trading engine
-            # For now, send sample decision data
-            decision = {
-                "timestamp": datetime.now().isoformat(),
-                "symbol": "BTC/USDT",
-                "decision": "buy",
-                "confidence": 0.75,
-                "market_data": {
-                    "price": 50000,
-                    "volume": 1000000,
-                    "change_24h": 2.5,
-                    "volatility": 1.2
-                },
-                "regime_state": {
-                    "regime": "bullish_calm",
-                    "confidence": 0.85
-                },
-                "component_scores": {
-                    "regime": 0.75,
-                    "ofi": 0.65,
-                    "whale": 0.45,
-                    "sentiment": 0.80,
-                    "macro": 0.55
-                },
-                "reasoning": [
-                    "Market regime indicates bullish calm conditions (85% confidence)",
-                    "Order flow imbalance shows strong buying pressure (65%)",
-                    "Sentiment analysis positive from recent news (80%)",
-                    "Macro conditions neutral to slightly positive (55%)"
-                ],
-                "position_size_multiplier": 1.25,
-                "stop_loss": 48500,
-                "take_profit": 52500
-            }
-            
-            await websocket.send_text(json.dumps(decision))
-            await asyncio.sleep(5)
+            try:
+                # In production, this would come from the actual trading engine
+                # For now, send sample decision data
+                decision = {
+                    "timestamp": datetime.now().isoformat(),
+                    "symbol": "BTC/USDT",
+                    "decision": "buy",
+                    "confidence": 0.75,
+                    "market_data": {
+                        "price": 50000,
+                        "volume": 1000000,
+                        "change_24h": 2.5,
+                        "volatility": 1.2
+                    },
+                    "regime_state": {
+                        "regime": "bullish_calm",
+                        "confidence": 0.85
+                    },
+                    "component_scores": {
+                        "regime": 0.75,
+                        "ofi": 0.65,
+                        "whale": 0.45,
+                        "sentiment": 0.80,
+                        "macro": 0.55
+                    },
+                    "reasoning": [
+                        "Market regime indicates bullish calm conditions (85% confidence)",
+                        "Order flow imbalance shows strong buying pressure (65%)",
+                        "Sentiment analysis positive from recent news (80%)",
+                        "Macro conditions neutral to slightly positive (55%)"
+                    ],
+                    "position_size_multiplier": 1.25,
+                    "stop_loss": 48500,
+                    "take_profit": 52500
+                }
+                
+                await websocket.send_text(json.dumps(decision))
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error(f"Error sending decision data: {e}")
+                break
             
     except WebSocketDisconnect:
         logger.info("Decision trace WebSocket disconnected")

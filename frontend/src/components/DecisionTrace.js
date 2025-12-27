@@ -100,7 +100,7 @@ export default function DecisionTrace() {
         clearInterval(playbackIntervalRef.current);
       }
     };
-  }, [isPlaying]);
+  }, [isPlaying, filteredDecisions]);
 
   const filteredDecisions = decisions.filter(d => {
     if (filter === 'all') return true;
