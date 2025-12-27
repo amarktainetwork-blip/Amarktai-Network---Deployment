@@ -1,0 +1,251 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Send, Bot, User, AlertTriangle, CheckCircle } from 'lucide-react';
+
+/**
+ * AI Chat Panel Component
+ * Real-time AI chat with action confirmation
+ */
+const AIChatPanel = () => {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [systemState, setSystemState] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Load chat history on mount
+  useEffect(() => {
+    loadChatHistory();
+  }, []);
+
+  const loadChatHistory = async () => {
+    try {
+      const response = await fetch('/api/ai/chat/history', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      const data = await response.json();
+      if (data.messages) {
+        setMessages(data.messages);
+      }
+    } catch (err) {
+      console.error('Failed to load chat history:', err);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+
+    const userMessage = {
+      role: 'user',
+      content: input,
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          content: input,
+          request_action: true  // Allow AI to propose actions
+        })
+      });
+
+      const data = await response.json();
+
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: data.content,
+        timestamp: data.timestamp
+      }]);
+
+      if (data.system_state) {
+        setSystemState(data.system_state);
+      }
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `Error: ${err.message}. Please try again.`,
+        timestamp: new Date().toISOString(),
+        error: true
+      }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const formatMessage = (content) => {
+    // Format markdown-style messages
+    return content
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 rounded">$1</code>')
+      .replace(/⚠️/g, '<span class="text-yellow-600">⚠️</span>')
+      .replace(/✅/g, '<span class="text-green-600">✅</span>');
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-white rounded-lg shadow-lg">
+      {/* Header */}
+      <div className="px-4 py-3 border-b bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
+        <div className="flex items-center gap-2">
+          <Bot size={24} />
+          <div>
+            <h3 className="font-semibold">AI Trading Assistant</h3>
+            <p className="text-xs opacity-90">Ask me anything about your trading system</p>
+          </div>
+        </div>
+      </div>
+
+      {/* System State Summary */}
+      {systemState && (
+        <div className="px-4 py-2 bg-blue-50 border-b text-sm">
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <span className="text-gray-600">Bots:</span>{' '}
+              <span className="font-semibold">{systemState.bots.active}/{systemState.bots.total}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Capital:</span>{' '}
+              <span className="font-semibold">R{systemState.capital.total.toLocaleString()}</span>
+            </div>
+            <div>
+              <span className="text-gray-600">Profit:</span>{' '}
+              <span className={`font-semibold ${systemState.capital.total_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                R{systemState.capital.total_profit.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {messages.length === 0 && (
+          <div className="text-center text-gray-400 mt-8">
+            <Bot size={48} className="mx-auto mb-4 opacity-50" />
+            <p>Start a conversation with your AI assistant!</p>
+            <p className="text-sm mt-2">Try asking:</p>
+            <ul className="text-sm mt-2 space-y-1">
+              <li>"How are my bots performing?"</li>
+              <li>"Show me my trade limits"</li>
+              <li>"Should I pause any bots?"</li>
+            </ul>
+          </div>
+        )}
+
+        {messages.map((msg, idx) => (
+          <div
+            key={idx}
+            className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            {msg.role === 'assistant' && (
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center">
+                  <Bot size={16} className="text-white" />
+                </div>
+              </div>
+            )}
+
+            <div
+              className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                msg.role === 'user'
+                  ? 'bg-blue-600 text-white'
+                  : msg.error
+                  ? 'bg-red-50 text-red-900 border border-red-200'
+                  : 'bg-gray-100 text-gray-900'
+              }`}
+            >
+              <div
+                className="text-sm whitespace-pre-wrap"
+                dangerouslySetInnerHTML={{ __html: formatMessage(msg.content) }}
+              />
+              <div className="text-xs opacity-70 mt-1">
+                {new Date(msg.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+
+            {msg.role === 'user' && (
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+                  <User size={16} className="text-white" />
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {loading && (
+          <div className="flex gap-3 justify-start">
+            <div className="flex-shrink-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center">
+                <Bot size={16} className="text-white" />
+              </div>
+            </div>
+            <div className="bg-gray-100 rounded-lg px-4 py-2">
+              <div className="flex gap-1">
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input */}
+      <div className="px-4 py-3 border-t bg-gray-50 rounded-b-lg">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Ask your AI assistant..."
+            className="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={loading}
+          />
+          <button
+            onClick={sendMessage}
+            disabled={loading || !input.trim()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            <Send size={16} />
+            <span className="hidden sm:inline">Send</span>
+          </button>
+        </div>
+        <div className="text-xs text-gray-500 mt-2">
+          <AlertTriangle size={12} className="inline mr-1" />
+          AI can suggest actions. Dangerous actions require confirmation.
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AIChatPanel;

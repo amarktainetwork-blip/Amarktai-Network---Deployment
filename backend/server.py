@@ -2665,6 +2665,17 @@ try:
     from routes.wallet_endpoints import router as wallet_router
     from routes.system_health_endpoints import router as health_router
     from routes.admin_endpoints import router as admin_router
+    from routes.bot_lifecycle import router as bot_lifecycle_router
+    from routes.system_limits import router as system_limits_router
+    from routes.live_trading_gate import router as live_gate_router
+    from routes.analytics_api import router as analytics_router
+    from routes.ai_chat import router as ai_chat_router
+    from routes.two_factor_auth import router as twofa_router
+    from routes.genetic_algorithm import router as genetic_router
+    from routes.dashboard_endpoints import router as dashboard_router
+    from routes.api_key_management import router as api_key_mgmt_router
+    from routes.daily_report import router as daily_report_router, daily_report_service
+    from routes.ledger_endpoints import router as ledger_router  # Phase 1: Ledger-first accounting
     from routes.alerts import router as alerts_router
     
     app.include_router(phase5_router)
@@ -2675,6 +2686,22 @@ try:
     app.include_router(wallet_router)
     app.include_router(health_router)
     app.include_router(admin_router)
+    app.include_router(bot_lifecycle_router)
+    app.include_router(system_limits_router)
+    app.include_router(live_gate_router)
+    app.include_router(analytics_router)
+    app.include_router(ai_chat_router)
+    app.include_router(twofa_router)
+    app.include_router(genetic_router)
+    app.include_router(dashboard_router)
+    app.include_router(api_key_mgmt_router)
+    app.include_router(daily_report_router)
+    app.include_router(ledger_router)  # Phase 1: Ledger endpoints
+    
+    # Start daily report scheduler
+    daily_report_service.start()
+    
+    logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Bot Lifecycle, System Limits, Live Gate, Analytics, AI Chat, 2FA, Genetic Algorithm, Dashboard, API Keys, Daily Reports")
     app.include_router(alerts_router)
     
     logger.info("✅ All endpoints loaded: Phase 5-8, Emergency Stop, Wallet Hub, Health, Admin, Alerts")

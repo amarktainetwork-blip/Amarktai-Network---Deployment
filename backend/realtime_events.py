@@ -37,6 +37,26 @@ class RealTimeEvents:
         })
     
     @staticmethod
+    async def bot_paused(user_id: str, bot_data: dict):
+        """Broadcast when bot is paused"""
+        await manager.send_message(user_id, {
+            "type": "bot_paused",
+            "bot": bot_data,
+            "message": f"⏸️ Bot '{bot_data.get('name')}' paused"
+        })
+        logger.info(f"📡 Real-time: bot_paused for user {user_id[:8]}")
+    
+    @staticmethod
+    async def bot_resumed(user_id: str, bot_data: dict):
+        """Broadcast when bot is resumed"""
+        await manager.send_message(user_id, {
+            "type": "bot_resumed",
+            "bot": bot_data,
+            "message": f"▶️ Bot '{bot_data.get('name')}' resumed"
+        })
+        logger.info(f"📡 Real-time: bot_resumed for user {user_id[:8]}")
+    
+    @staticmethod
     async def trade_executed(user_id: str, trade_data: dict):
         """Broadcast when trade executes"""
         await manager.send_message(user_id, {

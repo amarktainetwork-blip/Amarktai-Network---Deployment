@@ -30,8 +30,12 @@ next-env.d.ts
 dist/
 dist
 
-# Environment files (comprehensive coverage)
+# Environment files (allow .env.example but ignore actual .env files)
+*.env
+*.env.*
+!.env.example
 
+# Tokens and credentials
 *token.json*
 *credentials.json*
 
@@ -78,6 +82,8 @@ agenthub/agents/youtube/db
 
 # Mobile development
 android-sdk/
+-e 
+# Environment files
 
 # Environment files (but allow .env.example)
 *.env
