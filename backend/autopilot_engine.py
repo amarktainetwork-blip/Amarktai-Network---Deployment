@@ -30,6 +30,10 @@ class AutopilotEngine:
         
     async def start(self):
         """Start the autopilot engine"""
+        if self.running:
+            logger.warning("Autopilot Engine already running")
+            return
+            
         await self.init_db()
         self.running = True
         
@@ -332,10 +336,14 @@ class AutopilotEngine:
             logger.error(f"Strategy optimization error: {e}")
             
     def stop(self):
-        """Stop the autopilot engine"""
-        self.running = False
-        self.scheduler.shutdown()
-        logger.info("Autopilot Engine stopped")
+        """Stop the autopilot engine - never raises"""
+        try:
+            self.running = False
+            if self.scheduler and self.scheduler.running:
+                self.scheduler.shutdown(wait=False)
+            logger.info("Autopilot Engine stopped")
+        except Exception as e:
+            logger.warning(f"Autopilot shutdown warning (non-fatal): {e}")
 
 # Global instance
 autopilot = AutopilotEngine()

@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     
     # Start autonomous systems
     from autopilot_engine import autopilot
-    autopilot.start()
+    await autopilot.start()
     logger.info("🤖 Autopilot Engine started")
     
     from ai_bodyguard import bodyguard
@@ -109,10 +109,10 @@ async def lifespan(app: FastAPI):
     risk_management.start()
     logger.info("🎯 Risk Management started - Stop Loss, Take Profit, Trailing Stop active")
     
-    # Start Self-Healing System
-    from engines.self_healing import self_healing
-    self_healing.start()
-    logger.info("🛡️ Self-Healing System started - rogue bot detection every 30 min")
+    # Start Engines Self-Healing System (rogue bot detection)
+    from engines.self_healing import self_healing as engines_self_healing
+    engines_self_healing.start()
+    logger.info("🛡️ Engines Self-Healing System started - rogue bot detection every 30 min")
     
     # Initialize Fetch.ai and FLOKx integrations with env keys if available
     fetchai_key = os.environ.get('FETCHAI_API_KEY', '')
@@ -138,17 +138,63 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
-    autopilot.stop()
-    bodyguard.stop()
-    await autonomous_scheduler.stop()
-    await self_healing.stop()
-    await advanced_orders.stop()
-    trading_scheduler.stop()
-    ai_scheduler.stop()
-    autopilot_production.stop()
-    risk_management.stop()
-    reinvest_service.stop()  # Stop reinvestment scheduler
+    # Shutdown - each in try/except to prevent cascade failures
+    logger.info("🔴 Shutting down Amarktai Network...")
+    
+    try:
+        autopilot.stop()
+    except Exception as e:
+        logger.warning(f"Autopilot stop warning: {e}")
+    
+    try:
+        bodyguard.stop()
+    except Exception as e:
+        logger.warning(f"Bodyguard stop warning: {e}")
+    
+    try:
+        await autonomous_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"Autonomous scheduler stop warning: {e}")
+    
+    try:
+        await self_healing.stop()
+    except Exception as e:
+        logger.warning(f"Self-healing stop warning: {e}")
+    
+    try:
+        engines_self_healing.stop()
+    except Exception as e:
+        logger.warning(f"Engines self-healing stop warning: {e}")
+    
+    try:
+        await advanced_orders.stop()
+    except Exception as e:
+        logger.warning(f"Advanced orders stop warning: {e}")
+    
+    try:
+        trading_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"Trading scheduler stop warning: {e}")
+    
+    try:
+        ai_scheduler.stop()
+    except Exception as e:
+        logger.warning(f"AI scheduler stop warning: {e}")
+    
+    try:
+        autopilot_production.stop()
+    except Exception as e:
+        logger.warning(f"Production autopilot stop warning: {e}")
+    
+    try:
+        risk_management.stop()
+    except Exception as e:
+        logger.warning(f"Risk management stop warning: {e}")
+    
+    try:
+        reinvest_service.stop()
+    except Exception as e:
+        logger.warning(f"Reinvestment service stop warning: {e}")
     
     # Close CCXT async sessions
     try:
@@ -156,10 +202,15 @@ async def lifespan(app: FastAPI):
         await paper_engine.close_exchanges()
         logger.info("✅ CCXT sessions closed")
     except Exception as e:
-        logger.error(f"Error closing CCXT sessions: {e}")
+        logger.warning(f"CCXT close warning (non-fatal): {e}")
     
-    await close_db()
-    logger.info("🔴 All systems stopped")
+    try:
+        await close_db()
+        logger.info("✅ Database closed")
+    except Exception as e:
+        logger.warning(f"Database close warning: {e}")
+    
+    logger.info("🔴 All systems stopped gracefully")
 
 app = FastAPI(lifespan=lifespan)
 
