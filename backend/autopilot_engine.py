@@ -350,12 +350,16 @@ class AutopilotEngine:
             logger.error(f"Strategy optimization error: {e}")
             
     def stop(self):
-        """Stop the autopilot engine - never raises"""
+        """Stop the autopilot engine - never raises, explicitly handles SchedulerNotRunningError"""
         try:
             self.running = False
             if self.scheduler is not None and self.scheduler.running:
-                self.scheduler.shutdown(wait=False)
-                logger.info("Autopilot Engine stopped")
+                try:
+                    self.scheduler.shutdown(wait=False)
+                    logger.info("Autopilot Engine stopped")
+                except Exception as scheduler_error:
+                    # Explicitly catch SchedulerNotRunningError and any other scheduler issues
+                    logger.warning(f"Scheduler shutdown warning (ignored): {scheduler_error}")
             else:
                 logger.info("Autopilot Engine already stopped or not running")
         except Exception as e:
