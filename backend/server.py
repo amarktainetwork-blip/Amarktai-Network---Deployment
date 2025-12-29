@@ -16,13 +16,8 @@ from models import (
     APIKey, APIKeyCreate, Trade, SystemMode, Alert,
     ChatMessage, BotRiskMode, ProfileUpdate
 )
-from database import (
-    users_collection, bots_collection, api_keys_collection,
-    trades_collection, system_modes_collection, alerts_collection,
-    chat_messages_collection, close_db,
-    learning_logs_collection, autopilot_actions_collection, rogue_detections_collection,
-    db
-)
+# Use normalized database import pattern
+import database as db
 from auth import create_access_token, get_current_user, get_password_hash, verify_password
 from ai_service import ai_service
 from ccxt_service import ccxt_service
@@ -44,79 +39,127 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events with feature flags for plug-and-play stability"""
     logger.info("🚀 Starting Amarktai Network...")
     
-    # Start autonomous systems
-    from autopilot_engine import autopilot
-    await autopilot.start()
-    logger.info("🤖 Autopilot Engine started")
+    # =========================================================================
+    # STEP 1: Connect to database FIRST (before any other services)
+    # =========================================================================
+    try:
+        await db.connect()
+        logger.info("✅ Database connected and collections initialized")
+    except Exception as e:
+        logger.error(f"❌ FATAL: Database connection failed: {e}")
+        raise  # Cannot proceed without database
+    
     # Feature flags for safe plug-and-play deployment
     enable_trading = os.getenv('ENABLE_TRADING', '0') == '1'
     enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
     enable_ccxt = os.getenv('ENABLE_CCXT', '0') == '1'
-    enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '1') == '1'
+    enable_schedulers = os.getenv('ENABLE_SCHEDULERS', '0') == '1'
     
     logger.info(f"🎚️ Feature flags: TRADING={enable_trading}, AUTOPILOT={enable_autopilot}, CCXT={enable_ccxt}, SCHEDULERS={enable_schedulers}")
     
     # Track background tasks for clean shutdown
     background_tasks = []
     
+    # =========================================================================
+    # STEP 2: Start services in deterministic order
+    # =========================================================================
+    
     # Start autonomous systems based on feature flags
     if enable_autopilot:
-        from autopilot_engine import autopilot
-        await autopilot.start()  # FIXED: Added await
-        logger.info("🤖 Autopilot Engine started")
+        try:
+            from autopilot_engine import autopilot
+            await autopilot.start()
+            logger.info("🤖 Autopilot Engine started")
+        except Exception as e:
+            logger.error(f"Failed to start Autopilot Engine: {e}")
     else:
         logger.info("🤖 Autopilot Engine disabled (ENABLE_AUTOPILOT=0)")
     
-    from ai_bodyguard import bodyguard
-    task = asyncio.create_task(bodyguard.start())
-    background_tasks.append(task)
-    logger.info("🛡️ AI Bodyguard activated")
+    try:
+        from ai_bodyguard import bodyguard
+        task = asyncio.create_task(bodyguard.start())
+        background_tasks.append(task)
+        logger.info("🛡️ AI Bodyguard activated")
+    except Exception as e:
+        logger.error(f"Failed to start AI Bodyguard: {e}")
     
-    from self_learning import learning_system
-    await learning_system.init_db()
-    logger.info("📚 Self-Learning System initialized")
+    try:
+        from self_learning import learning_system
+        await learning_system.init_db()
+        logger.info("📚 Self-Learning System initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Self-Learning System: {e}")
     
     if enable_schedulers:
-        # Start NEW Autonomous Scheduler
-        from autonomous_scheduler import autonomous_scheduler
-        await autonomous_scheduler.start()
-        logger.info("🤖 Autonomous Scheduler started (lifecycle, capital, regime)")
+        try:
+            from autonomous_scheduler import autonomous_scheduler
+            await autonomous_scheduler.start()
+            logger.info("🤖 Autonomous Scheduler started (lifecycle, capital, regime)")
+        except Exception as e:
+            logger.error(f"Failed to start Autonomous Scheduler: {e}")
         
-        # Start Self-Healing System (use engines.self_healing only, not duplicate)
-        from engines.self_healing import self_healing
-        self_healing.start()
-        logger.info("🏥 Self-Healing System started")
+        try:
+            from engines.self_healing import self_healing
+            self_healing.start()
+            logger.info("🏥 Self-Healing System started")
+        except Exception as e:
+            logger.error(f"Failed to start Self-Healing System: {e}")
         
-        # Start Advanced Orders Monitor
-        from advanced_orders import advanced_orders
-        await advanced_orders.start()
-        logger.info("📈 Advanced Orders monitoring started")
+        try:
+            from advanced_orders import advanced_orders
+            await advanced_orders.start()
+            logger.info("📈 Advanced Orders monitoring started")
+        except Exception as e:
+            logger.error(f"Failed to start Advanced Orders: {e}")
+        
+        try:
+            from ai_scheduler import ai_scheduler
+            await ai_scheduler.start()
+            logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM")
+        except Exception as e:
+            logger.error(f"Failed to start AI Scheduler: {e}")
+        
+        try:
+            from ai_memory_manager import memory_manager
+            task = asyncio.create_task(memory_manager.run_maintenance())
+            background_tasks.append(task)
+            logger.info("💾 AI Memory Manager started")
+        except Exception as e:
+            logger.error(f"Failed to start AI Memory Manager: {e}")
     else:
         logger.info("📅 Schedulers disabled (ENABLE_SCHEDULERS=0)")
     
     if enable_trading:
-        # Start Paper Trading Scheduler
-        trading_scheduler.start()
-        logger.info("💹 Paper Trading Scheduler started - trades every 10 seconds")
+        try:
+            trading_scheduler.start()
+            logger.info("💹 Paper Trading Scheduler started")
+        except Exception as e:
+            logger.error(f"Failed to start Trading Scheduler: {e}")
         
-        # Start Production Trading Engine
-        from engines.trading_engine_production import trading_engine
-        trading_engine.start()
-        logger.info("💹 Production Trading Engine started - 50 trades/day limit, 25-30 min cooldown")
+        try:
+            from engines.trading_engine_production import trading_engine
+            trading_engine.start()
+            logger.info("💹 Production Trading Engine started")
+        except Exception as e:
+            logger.error(f"Failed to start Trading Engine: {e}")
         
-        # Start Production Autopilot (R500 reinvestment, auto-spawn, rebalancing)
-        from engines.autopilot_production import autopilot_production
-        autopilot_production.start()
-        logger.info("🤖 Production Autopilot started - R500 reinvestment, auto-spawn, intelligent rebalancing")
+        try:
+            from engines.autopilot_production import autopilot_production
+            autopilot_production.start()
+            logger.info("🤖 Production Autopilot started")
+        except Exception as e:
+            logger.error(f"Failed to start Production Autopilot: {e}")
         
-        # Start Risk Management (Stop Loss, Take Profit, Trailing Stop)
-        from engines.risk_management import risk_management
-        risk_management.start()
-        logger.info("🎯 Risk Management started - Stop Loss, Take Profit, Trailing Stop active")
+        try:
+            from engines.risk_management import risk_management
+            risk_management.start()
+            logger.info("🎯 Risk Management started")
+        except Exception as e:
+            logger.error(f"Failed to start Risk Management: {e}")
     else:
         logger.info("💹 Trading engines disabled (ENABLE_TRADING=0)")
     
-    # Start wallet balance monitor
+    # Start wallet balance monitor (optional)
     try:
         from jobs.wallet_balance_monitor import wallet_balance_monitor
         wallet_balance_monitor.start()
@@ -124,130 +167,42 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not start wallet monitor: {e}")
     
-    # Start AI Backend Scheduler (nightly at 2 AM)
-    from ai_scheduler import ai_scheduler
-    await ai_scheduler.start()
-    logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM (promotions, rankings, evolution)")
+    # Initialize Fetch.ai and FLOKx integrations if keys available
+    try:
+        fetchai_key = os.environ.get('FETCHAI_API_KEY', '')
+        if fetchai_key:
+            from fetchai_integration import fetchai
+            fetchai.set_credentials(fetchai_key)
+            logger.info("🔮 Fetch.ai integration configured")
+    except Exception as e:
+        logger.warning(f"Could not configure Fetch.ai: {e}")
     
-    # Start AI Memory Manager (archives old chats, cleans up after 6 months)
-    from ai_memory_manager import memory_manager
-    asyncio.create_task(memory_manager.run_maintenance())
-    logger.info("💾 AI Memory Manager started - archives 30-day old chats, deletes 6-month old archives")
+    try:
+        flokx_key = os.environ.get('FLOKX_API_KEY', '')
+        if flokx_key:
+            from flokx_integration import flokx
+            flokx.set_credentials(flokx_key)
+            logger.info("🎯 FLOKx integration configured")
+    except Exception as e:
+        logger.warning(f"Could not configure FLOKx: {e}")
     
-    # Start Production Trading Engine
-    from engines.trading_engine_production import trading_engine
-    trading_engine.start()
-    logger.info("💹 Production Trading Engine started - 50 trades/day limit, 25-30 min cooldown")
-    
-    # Start Production Autopilot (R500 reinvestment, auto-spawn, rebalancing)
-    from engines.autopilot_production import autopilot_production
-    autopilot_production.start()
-    logger.info("🤖 Production Autopilot started - R500 reinvestment, auto-spawn, intelligent rebalancing")
-    
-    # Start Risk Management (Stop Loss, Take Profit, Trailing Stop)
-    from engines.risk_management import risk_management
-    risk_management.start()
-    logger.info("🎯 Risk Management started - Stop Loss, Take Profit, Trailing Stop active")
-    
-    # Start Engines Self-Healing System (rogue bot detection)
-    from engines.self_healing import self_healing as engines_self_healing
-    engines_self_healing.start()
-    logger.info("🛡️ Engines Self-Healing System started - rogue bot detection every 30 min")
-    if enable_schedulers:
-        # Start AI Backend Scheduler (nightly at 2 AM)
-        from ai_scheduler import ai_scheduler
-        await ai_scheduler.start()
-        logger.info("🧠 AI Backend Scheduler started - runs nightly at 2 AM (promotions, rankings, evolution)")
-        
-        # Start AI Memory Manager (archives old chats, cleans up after 6 months)
-        from ai_memory_manager import memory_manager
-        task = asyncio.create_task(memory_manager.run_maintenance())
-        background_tasks.append(task)
-        logger.info("💾 AI Memory Manager started - archives 30-day old chats, deletes 6-month old archives")
-    
-    # Initialize Fetch.ai and FLOKx integrations with env keys if available
-    fetchai_key = os.environ.get('FETCHAI_API_KEY', '')
-    flokx_key = os.environ.get('FLOKX_API_KEY', '')
-    
-    if fetchai_key:
-        from fetchai_integration import fetchai
-        fetchai.set_credentials(fetchai_key)
-        logger.info("🔮 Fetch.ai integration configured")
-    
-    if flokx_key:
-        from flokx_integration import flokx
-        flokx.set_credentials(flokx_key)
-        logger.info("🎯 FLOKx integration configured")
-    
-    # Start Daily Reinvestment Scheduler
-    from services.daily_reinvestment import get_reinvestment_service
-    reinvest_service = get_reinvestment_service(db)
-    reinvest_service.start()
-    logger.info("💰 Daily Reinvestment Scheduler started")
+    # Start Daily Reinvestment Scheduler (optional)
+    try:
+        from services.daily_reinvestment import get_reinvestment_service
+        reinvest_service = get_reinvestment_service(db)
+        reinvest_service.start()
+        logger.info("💰 Daily Reinvestment Scheduler started")
+    except Exception as e:
+        logger.warning(f"Could not start Reinvestment Scheduler: {e}")
     
     logger.info("🚀 All autonomous systems operational")
     
     yield
     
-    # Shutdown - each in try/except to prevent cascade failures
+    # =============================================================================
+    # SHUTDOWN - Each subsystem wrapped in try/except to prevent cascade failures
+    # =============================================================================
     logger.info("🔴 Shutting down Amarktai Network...")
-    
-    try:
-        autopilot.stop()
-    except Exception as e:
-        logger.warning(f"Autopilot stop warning: {e}")
-    
-    try:
-        bodyguard.stop()
-    except Exception as e:
-        logger.warning(f"Bodyguard stop warning: {e}")
-    
-    try:
-        await autonomous_scheduler.stop()
-    except Exception as e:
-        logger.warning(f"Autonomous scheduler stop warning: {e}")
-    
-    try:
-        await self_healing.stop()
-    except Exception as e:
-        logger.warning(f"Self-healing stop warning: {e}")
-    
-    try:
-        engines_self_healing.stop()
-    except Exception as e:
-        logger.warning(f"Engines self-healing stop warning: {e}")
-    
-    try:
-        await advanced_orders.stop()
-    except Exception as e:
-        logger.warning(f"Advanced orders stop warning: {e}")
-    
-    try:
-        trading_scheduler.stop()
-    except Exception as e:
-        logger.warning(f"Trading scheduler stop warning: {e}")
-    
-    try:
-        ai_scheduler.stop()
-    except Exception as e:
-        logger.warning(f"AI scheduler stop warning: {e}")
-    
-    try:
-        autopilot_production.stop()
-    except Exception as e:
-        logger.warning(f"Production autopilot stop warning: {e}")
-    
-    try:
-        risk_management.stop()
-    except Exception as e:
-        logger.warning(f"Risk management stop warning: {e}")
-    
-    try:
-        reinvest_service.stop()
-    except Exception as e:
-        logger.warning(f"Reinvestment service stop warning: {e}")
-    # Shutdown - HARDENED: Wrap each stop in try/except to prevent crashes
-    logger.info("🔴 Shutting down systems...")
     
     # Cancel background tasks first with timeout
     if background_tasks:
@@ -256,7 +211,6 @@ async def lifespan(app: FastAPI):
             if not task.done():
                 task.cancel()
         
-        # Wait for tasks to complete with timeout
         try:
             await asyncio.wait_for(
                 asyncio.gather(*background_tasks, return_exceptions=True),
@@ -271,58 +225,86 @@ async def lifespan(app: FastAPI):
     # Stop subsystems based on feature flags
     if enable_autopilot:
         try:
-            autopilot.stop()
+            from autopilot_engine import autopilot
+            await autopilot.stop()  # Now async
+            logger.info("✅ Autopilot Engine stopped")
         except Exception as e:
             logger.error(f"Error stopping autopilot: {e}")
     
     try:
+        from ai_bodyguard import bodyguard
         bodyguard.stop()
+        logger.info("✅ AI Bodyguard stopped")
     except Exception as e:
         logger.error(f"Error stopping bodyguard: {e}")
     
     if enable_schedulers:
         try:
+            from autonomous_scheduler import autonomous_scheduler
             await autonomous_scheduler.stop()
+            logger.info("✅ Autonomous Scheduler stopped")
         except Exception as e:
             logger.error(f"Error stopping autonomous_scheduler: {e}")
         
         try:
+            from engines.self_healing import self_healing
             await self_healing.stop()
+            logger.info("✅ Self-Healing System stopped")
         except Exception as e:
             logger.error(f"Error stopping self_healing: {e}")
         
         try:
+            from advanced_orders import advanced_orders
             await advanced_orders.stop()
+            logger.info("✅ Advanced Orders stopped")
         except Exception as e:
             logger.error(f"Error stopping advanced_orders: {e}")
         
         try:
+            from ai_scheduler import ai_scheduler
             ai_scheduler.stop()
+            logger.info("✅ AI Scheduler stopped")
         except Exception as e:
             logger.error(f"Error stopping ai_scheduler: {e}")
     
     if enable_trading:
         try:
             trading_scheduler.stop()
+            logger.info("✅ Trading Scheduler stopped")
         except Exception as e:
             logger.error(f"Error stopping trading_scheduler: {e}")
         
         try:
+            from engines.trading_engine_production import trading_engine
+            trading_engine.stop()
+            logger.info("✅ Trading Engine stopped")
+        except Exception as e:
+            logger.error(f"Error stopping trading_engine: {e}")
+        
+        try:
+            from engines.autopilot_production import autopilot_production
             autopilot_production.stop()
+            logger.info("✅ Production Autopilot stopped")
         except Exception as e:
             logger.error(f"Error stopping autopilot_production: {e}")
         
         try:
+            from engines.risk_management import risk_management
             risk_management.stop()
+            logger.info("✅ Risk Management stopped")
         except Exception as e:
             logger.error(f"Error stopping risk_management: {e}")
     
+    # Stop optional services
     try:
+        from services.daily_reinvestment import get_reinvestment_service
+        reinvest_service = get_reinvestment_service(db)
         reinvest_service.stop()
+        logger.info("✅ Reinvestment Service stopped")
     except Exception as e:
         logger.error(f"Error stopping reinvest_service: {e}")
     
-    # Close CCXT async sessions - ALWAYS TRY (even if ENABLE_CCXT=0)
+    # Close CCXT async sessions if trading/ccxt enabled
     if enable_ccxt or enable_trading:
         try:
             from paper_trading_engine import paper_engine
@@ -331,21 +313,22 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Error closing CCXT sessions: {e}")
     
+    # Close AI service sessions (aiohttp)
     try:
-        await close_db()
+        if ai_service and hasattr(ai_service, 'close'):
+            await ai_service.close()
+            logger.info("✅ AI service sessions closed")
     except Exception as e:
-        logger.warning(f"CCXT close warning (non-fatal): {e}")
+        logger.error(f"Error closing AI service: {e}")
     
+    # Close database connection
     try:
-        await close_db()
-        logger.info("✅ Database closed")
+        await db.close_db()
+        logger.info("✅ Database connection closed")
     except Exception as e:
-        logger.warning(f"Database close warning: {e}")
-    
-    logger.info("🔴 All systems stopped gracefully")
         logger.error(f"Error closing database: {e}")
     
-    logger.info("🔴 All systems stopped")
+    logger.info("🔴 All systems stopped gracefully")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -489,7 +472,7 @@ async def decision_trace_websocket(websocket: WebSocket):
 
 @api_router.post("/auth/register")
 async def register(user: User):
-    existing = await users_collection.find_one({"email": user.email}, {"_id": 0})
+    existing = await db.users_collection.find_one({"email": user.email}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
@@ -497,14 +480,14 @@ async def register(user: User):
     user_dict['password_hash'] = get_password_hash(user_dict['password_hash'])
     user_dict['created_at'] = datetime.now(timezone.utc).isoformat()
     
-    await users_collection.insert_one(user_dict)
+    await db.users_collection.insert_one(user_dict)
     
     token = create_access_token({"user_id": user.id})
     return {"token": token, "user": {k: v for k, v in user_dict.items() if k != 'password_hash'}}
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
-    user = await users_collection.find_one({"email": credentials.email}, {"_id": 0})
+    user = await db.users_collection.find_one({"email": credentials.email}, {"_id": 0})
     
     if not user or not verify_password(credentials.password, user['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -514,7 +497,7 @@ async def login(credentials: UserLogin):
 
 @api_router.get("/auth/me")
 async def get_current_user_profile(user_id: str = Depends(get_current_user)):
-    user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+    user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {k: v for k, v in user.items() if k != 'password_hash'}
@@ -526,7 +509,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
         update_data = {k: v for k, v in update.items() if v is not None}
         
         if update_data:
-            await users_collection.update_one(
+            await db.users_collection.update_one(
                 {"id": user_id},
                 {"$set": update_data}
             )
@@ -536,7 +519,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
             del ai_service.chats[user_id]
             logger.info(f"Cleared AI chat cache for user {user_id} after name update")
         
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         return {"message": "Profile updated", "user": {k: v for k, v in user.items() if k != 'password'}}
     except Exception as e:
         logger.error(f"Profile update error: {e}")
@@ -548,7 +531,7 @@ async def update_profile(update: dict, user_id: str = Depends(get_current_user))
 
 @api_router.get("/bots")
 async def get_bots(user_id: str = Depends(get_current_user)):
-    bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+    bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
     return bots
 
 @api_router.post("/bots")
@@ -576,7 +559,7 @@ async def create_bot(bot: BotCreate, user_id: str = Depends(get_current_user)):
     result['id'] = str(uuid4())
     
     # Insert validated bot
-    await bots_collection.insert_one(result)
+    await db.bots_collection.insert_one(result)
     
     # Remove MongoDB _id before returning
     result.pop('_id', None)
@@ -603,7 +586,7 @@ async def batch_create_bots(data: dict, user_id: str = Depends(get_current_user)
     exchange = data.get('exchange', 'luno')
     
     bots_to_create = []
-    bot_number = await bots_collection.count_documents({"user_id": user_id}) + 1
+    bot_number = await db.bots_collection.count_documents({"user_id": user_id}) + 1
     
     for i in range(safe_count):
         bots_to_create.append({
@@ -661,7 +644,7 @@ async def batch_create_bots(data: dict, user_id: str = Depends(get_current_user)
         })
     
     if bots_to_create:
-        await bots_collection.insert_many(bots_to_create)
+        await db.bots_collection.insert_many(bots_to_create)
     
     return {
         "message": f"{len(bots_to_create)} bots created", 
@@ -671,24 +654,24 @@ async def batch_create_bots(data: dict, user_id: str = Depends(get_current_user)
 
 @api_router.put("/bots/{bot_id}")
 async def update_bot(bot_id: str, update: dict, user_id: str = Depends(get_current_user)):
-    bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+    bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
     if not bot:
         raise HTTPException(status_code=404, detail="Bot not found")
     
     update_data = {k: v for k, v in update.items() if v is not None}
     
     if update_data:
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {"$set": update_data}
         )
     
-    updated_bot = await bots_collection.find_one({"id": bot_id}, {"_id": 0})
+    updated_bot = await db.bots_collection.find_one({"id": bot_id}, {"_id": 0})
     return updated_bot
 
 @api_router.delete("/bots/{bot_id}")
 async def delete_bot(bot_id: str, user_id: str = Depends(get_current_user)):
-    result = await bots_collection.delete_one({"id": bot_id, "user_id": user_id})
+    result = await db.bots_collection.delete_one({"id": bot_id, "user_id": user_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Bot not found")
     return {"message": "Bot deleted"}
@@ -698,7 +681,7 @@ async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_us
     """Promote bot from paper to live trading"""
     try:
         # Verify bot belongs to user
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -720,7 +703,7 @@ async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_us
         
         # Check for API keys before promoting to live
         exchange = bot.get('exchange', '').lower()
-        api_key_doc = await api_keys_collection.find_one({
+        api_key_doc = await db.api_keys_collection.find_one({
             "user_id": user_id,
             "exchange": exchange
         }, {"_id": 0})
@@ -735,7 +718,7 @@ async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_us
             }
         
         # Promote to live
-        await bots_collection.update_one(
+        await db.bots_collection.update_one(
             {"id": bot_id},
             {"$set": {
                 "mode": "live",
@@ -746,7 +729,7 @@ async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_us
         )
         
         # Create alert
-        await alerts_collection.insert_one({
+        await db.alerts_collection.insert_one({
             "user_id": user_id,
             "type": "promotion",
             "severity": "high",
@@ -772,7 +755,7 @@ async def promote_bot_to_live(bot_id: str, user_id: str = Depends(get_current_us
 async def get_promotion_status(bot_id: str, user_id: str = Depends(get_current_user)):
     """Get bot's eligibility for live promotion"""
     try:
-        bot = await bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
+        bot = await db.bots_collection.find_one({"id": bot_id, "user_id": user_id}, {"_id": 0})
         if not bot:
             raise HTTPException(status_code=404, detail="Bot not found")
         
@@ -805,7 +788,7 @@ async def health_check():
     
     # Get system modes
     try:
-        modes_doc = await system_modes_collection.find_one({})
+        modes_doc = await db.system_modes_collection.find_one({})
         system_modes = {
             "emergency_stop": modes_doc.get('emergencyStop', False) if modes_doc else False,
             "live_trading_enabled": modes_doc.get('liveTrading', False) if modes_doc else False,
@@ -823,6 +806,22 @@ async def health_check():
         "version": "3.0.0"
     }
 
+@api_router.get("/health/ping")
+async def health_ping():
+    """Lightweight health check - verifies DB connectivity"""
+    try:
+        # Test DB connection
+        await db.command("ping")
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Database unreachable: {str(e)}"
+        )
+
 # ============================================================================
 # SYSTEM MODE CONTROLS - NOW FUNCTIONAL
 # ============================================================================
@@ -830,7 +829,7 @@ async def health_check():
 @api_router.get("/system/mode")
 async def get_system_modes(user_id: str = Depends(get_current_user)):
     """Get current system mode states"""
-    modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+    modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
     
     if not modes:
         # Create default modes
@@ -841,7 +840,7 @@ async def get_system_modes(user_id: str = Depends(get_current_user)):
             "autopilot": False,
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
-        await system_modes_collection.insert_one(modes)
+        await db.system_modes_collection.insert_one(modes)
     
     return modes
 
@@ -855,7 +854,7 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
         logger.info(f"System mode update: {mode} = {enabled} for user {user_id}")
         
         # Get current modes
-        current_modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        current_modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         if not current_modes:
             current_modes = {
@@ -882,7 +881,7 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
                 logger.info(f"🎉 Promoted {promoted_count} bots to live trading with reset capital")
         
         # Save to database
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {"$set": current_modes},
             upsert=True
@@ -916,7 +915,7 @@ async def update_system_mode(data: dict, user_id: str = Depends(get_current_user
 async def get_overview(user_id: str = Depends(get_current_user)):
     """Get dashboard overview - FIXED with accurate counts + mode display"""
     try:
-        bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
         
         # Accurate counts
         active_bots = [b for b in bots if b.get('status') == 'active']
@@ -940,7 +939,7 @@ async def get_overview(user_id: str = Depends(get_current_user)):
         
         # Calculate REAL 24h change from actual trades
         twenty_four_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        recent_trades = await trades_collection.find({
+        recent_trades = await db.trades_collection.find({
             "user_id": user_id,
             "timestamp": {"$gte": twenty_four_hours_ago}
         }, {"_id": 0}).to_list(10000)
@@ -953,7 +952,7 @@ async def get_overview(user_id: str = Depends(get_current_user)):
         exposure = (total_capital / (total_capital + 1000)) * 100 if total_capital > 0 else 0
         
         # Get system modes
-        modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         
         # Determine display text
         if live_bots > 0:
@@ -1013,7 +1012,7 @@ async def get_metrics(user_id: str = Depends(get_current_user)):
 async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_user)):
     """Get recent trades for live feed - NO LIMIT"""
     try:
-        trades = await trades_collection.find(
+        trades = await db.trades_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(limit).to_list(limit)
@@ -1032,7 +1031,7 @@ async def get_recent_trades(limit: int = 50, user_id: str = Depends(get_current_
 
 @api_router.get("/api-keys")
 async def get_api_keys(user_id: str = Depends(get_current_user)):
-    keys = await api_keys_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    keys = await db.api_keys_collection.find({"user_id": user_id}, {"_id": 0}).to_list(100)
     for key in keys:
         if 'secret' in key:
             key['secret'] = '***' + key['secret'][-4:] if len(key.get('secret', '')) > 4 else '***'
@@ -1048,7 +1047,7 @@ async def create_api_key(key: APIKeyCreate, user_id: str = Depends(get_current_u
         raise HTTPException(status_code=400, detail="API key cannot be empty")
     
     # Delete existing key for this provider
-    await api_keys_collection.delete_many({"user_id": user_id, "provider": key.provider})
+    await db.api_keys_collection.delete_many({"user_id": user_id, "provider": key.provider})
     
     # Create new key - SAVE ONLY, no testing during save
     key_dict = key.model_dump()
@@ -1057,7 +1056,7 @@ async def create_api_key(key: APIKeyCreate, user_id: str = Depends(get_current_u
     key_dict['connected'] = False  # User must test manually
     key_dict['created_at'] = datetime.now(timezone.utc).isoformat()
     
-    await api_keys_collection.insert_one(key_dict)
+    await db.api_keys_collection.insert_one(key_dict)
     
     # Return sanitized key (without MongoDB _id)
     return_key = {k: v for k, v in key_dict.items() if k != '_id'}
@@ -1070,7 +1069,7 @@ async def create_api_key(key: APIKeyCreate, user_id: str = Depends(get_current_u
 async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
     """Test API key connection for a provider"""
     # Get the API key
-    key = await api_keys_collection.find_one({"user_id": user_id, "provider": provider}, {"_id": 0})
+    key = await db.api_keys_collection.find_one({"user_id": user_id, "provider": provider}, {"_id": 0})
     if not key:
         raise HTTPException(status_code=404, detail=f"No API key found for {provider}")
     
@@ -1083,7 +1082,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             is_valid = await ccxt_service.test_connection(provider, key['api_key'], key['api_secret'])
             
             # Update connection status
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": is_valid}}
             )
@@ -1111,7 +1110,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
                 max_tokens=10
             )
             
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": True}}
             )
@@ -1120,7 +1119,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
         except Exception as e:
             error_msg = str(e)
             logger.error(f"OpenAI test failed: {error_msg}")
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": False}}
             )
@@ -1148,7 +1147,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             # Handle boolean return from test_connection
             is_connected = bool(result)
             
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": is_connected}}
             )
@@ -1171,7 +1170,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             from fetchai_integration import fetchai
             result = await fetchai.test_connection(key['api_key'])
             
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": result}}
             )
@@ -1194,14 +1193,14 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             })
             await asyncio.to_thread(exchange.fetch_balance)
             
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": True}}
             )
             return {"message": "Kraken connection successful", "connected": True}
         except Exception as e:
             logger.error(f"Kraken test failed: {e}")
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": False}}
             )
@@ -1217,14 +1216,14 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
             })
             await asyncio.to_thread(exchange.fetch_balance)
             
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": True}}
             )
             return {"message": "VALR connection successful", "connected": True}
         except Exception as e:
             logger.error(f"VALR test failed: {e}")
-            await api_keys_collection.update_one(
+            await db.api_keys_collection.update_one(
                 {"id": key['id']},
                 {"$set": {"connected": False}}
             )
@@ -1235,7 +1234,7 @@ async def test_api_key(provider: str, user_id: str = Depends(get_current_user)):
 @api_router.delete("/api-keys/{provider}")
 async def delete_api_key_by_provider(provider: str, user_id: str = Depends(get_current_user)):
     """Delete API key by provider name"""
-    result = await api_keys_collection.delete_many({"provider": provider, "user_id": user_id})
+    result = await db.api_keys_collection.delete_many({"provider": provider, "user_id": user_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail=f"No API key found for {provider}")
     return {"message": f"{provider} API key deleted", "deleted_count": result.deleted_count}
@@ -1251,7 +1250,7 @@ async def trigger_learning_now(user_id: str = Depends(get_current_user)):
         from self_learning import learning_system
         
         # Get ALL trades (no limit)
-        trades = await trades_collection.find({"user_id": user_id}, {"_id": 0}).to_list(None)
+        trades = await db.trades_collection.find({"user_id": user_id}, {"_id": 0}).to_list(None)
         
         # Run learning analysis
         await learning_system.analyze_daily_trades(user_id)
@@ -1283,12 +1282,12 @@ async def bodyguard_system_check(user_id: str = Depends(get_current_user)):
         import psutil
         
         # Get user's bots ONLY
-        bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
         active_bots = [b for b in bots if b.get('status') == 'active']
         
         # Get today's trades
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0).isoformat()
-        trades_today = await trades_collection.count_documents({
+        trades_today = await db.trades_collection.count_documents({
             "user_id": user_id,
             "timestamp": {"$gte": today_start}
         })
@@ -1409,12 +1408,12 @@ async def get_storage_usage(user_id: str = Depends(get_current_user)):
         import sys
         
         # Verify user is admin (basic check - enhance with proper role system)
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         if not user:
             raise HTTPException(status_code=403, detail="Unauthorized")
         
         # Get all users with their storage breakdown
-        all_users = await users_collection.find({}, {"_id": 0}).to_list(1000)
+        all_users = await db.users_collection.find({}, {"_id": 0}).to_list(1000)
         storage_data = []
         
         for usr in all_users:
@@ -1423,22 +1422,22 @@ async def get_storage_usage(user_id: str = Depends(get_current_user)):
             # Calculate storage for each data type
             
             # 1. Chat messages (AI memory)
-            chat_messages = await chat_messages_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(10000)
+            chat_messages = await db.chat_messages_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(10000)
             chat_size = sum(sys.getsizeof(json.dumps(msg)) for msg in chat_messages)
             
             # 2. Trade history
-            trades = await trades_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(10000)
+            trades = await db.trades_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(10000)
             trades_size = sum(sys.getsizeof(json.dumps(trade)) for trade in trades)
             
             # 3. Bot configurations
-            bots = await bots_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(1000)
+            bots = await db.bots_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(1000)
             bots_size = sum(sys.getsizeof(json.dumps(bot)) for bot in bots)
             
             # 4. User data
             user_size = sys.getsizeof(json.dumps(usr))
             
             # 5. Alerts
-            alerts = await alerts_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(1000)
+            alerts = await db.alerts_collection.find({"user_id": usr_id}, {"_id": 0}).to_list(1000)
             alerts_size = sum(sys.getsizeof(json.dumps(alert)) for alert in alerts)
             
             total_bytes = chat_size + trades_size + bots_size + user_size + alerts_size
@@ -1511,7 +1510,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
             return ""
         
         # Get user details for personalization and admin check
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         first_name = user.get('first_name', 'User') if user else 'User'
         is_admin = user.get('is_admin', False) if user else False
         
@@ -1531,7 +1530,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
             )
             user_msg_dict = user_msg.model_dump()
             user_msg_dict['timestamp'] = user_msg_dict['timestamp'].isoformat()
-            await chat_messages_collection.insert_one(user_msg_dict)
+            await db.chat_messages_collection.insert_one(user_msg_dict)
             
             # Format command result as response
             if command_result.get('success'):
@@ -1562,7 +1561,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
             ai_msg_dict = ai_msg.model_dump()
             ai_msg_dict['timestamp'] = ai_msg_dict['timestamp'].isoformat()
             ai_msg_dict['command_result'] = command_result  # Include structured data
-            await chat_messages_collection.insert_one(ai_msg_dict)
+            await db.chat_messages_collection.insert_one(ai_msg_dict)
             
             # Send via WebSocket with command result
             await manager.send_message(user_id, {
@@ -1576,7 +1575,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
         
         # Not a command - proceed with regular AI chat
         # Get recent conversation history (last 10 messages)
-        recent_messages = await chat_messages_collection.find(
+        recent_messages = await db.chat_messages_collection.find(
             {"user_id": user_id},
             {"_id": 0}
         ).sort("timestamp", -1).limit(10).to_list(10)
@@ -1598,7 +1597,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
         )
         user_msg_dict = user_msg.model_dump()
         user_msg_dict['timestamp'] = user_msg_dict['timestamp'].isoformat()
-        await chat_messages_collection.insert_one(user_msg_dict)
+        await db.chat_messages_collection.insert_one(user_msg_dict)
         
         # Process with AI PRODUCTION HANDLER (COMPLETE SYSTEM)
         from ai_production import ai_production
@@ -1613,7 +1612,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
         )
         ai_msg_dict = ai_msg.model_dump()
         ai_msg_dict['timestamp'] = ai_msg_dict['timestamp'].isoformat()
-        await chat_messages_collection.insert_one(ai_msg_dict)
+        await db.chat_messages_collection.insert_one(ai_msg_dict)
         
         # Send via WebSocket
         await manager.send_message(user_id, {
@@ -1629,7 +1628,7 @@ async def send_chat_message(message: dict, user_id: str = Depends(get_current_us
 @api_router.get("/chat/history")
 async def get_chat_history(limit: int = 50, user_id: str = Depends(get_current_user)):
     """Get chat history"""
-    messages = await chat_messages_collection.find(
+    messages = await db.chat_messages_collection.find(
         {"user_id": user_id},
         {"_id": 0}
     ).sort("timestamp", -1).limit(limit).to_list(limit)
@@ -1661,8 +1660,8 @@ async def get_profit_history(period: str = 'daily', user_id: str = Depends(get_c
         from collections import defaultdict
         
         # BACKEND TRUTH: Query MongoDB directly for bot and trade data
-        bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
-        trades = await trades_collection.find({"user_id": user_id}, {"_id": 0}).to_list(None)
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        trades = await db.trades_collection.find({"user_id": user_id}, {"_id": 0}).to_list(None)
         
         labels = []
         values = []
@@ -1786,7 +1785,7 @@ async def countdown_to_million(user_id: str = Depends(get_current_user)):
         from paper_trading_engine import paper_engine
         
         # BACKEND TRUTH: Get system mode and wallet data from MongoDB
-        system_mode = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        system_mode = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         is_live = system_mode.get('liveTrading', False) if system_mode else False
         
         # Get current balance (paper or live based on mode)
@@ -1804,7 +1803,7 @@ async def countdown_to_million(user_id: str = Depends(get_current_user)):
         current_capital = zar_balance + (btc_balance * btc_price)
         
         # BACKEND TRUTH: Get all bots total capital from MongoDB
-        bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
         total_bot_capital = sum(bot.get('current_capital', 0) for bot in bots)
         total_capital = max(current_capital, total_bot_capital)
         
@@ -1826,7 +1825,7 @@ async def countdown_to_million(user_id: str = Depends(get_current_user)):
         
         # BACKEND TRUTH: Calculate daily ROI from recent trades in MongoDB
         thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-        recent_trades = await trades_collection.find({
+        recent_trades = await db.trades_collection.find({
             "user_id": user_id,
             "timestamp": {"$gte": thirty_days_ago}
         }).to_list(None)  # None = no limit
@@ -2046,7 +2045,7 @@ async def get_deposit_address(user_id: str = Depends(get_current_user)):
 
 @api_router.get("/admin/users")
 async def get_all_users(user_id: str = Depends(get_current_user)):
-    users = await users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
+    users = await db.users_collection.find({}, {"_id": 0, "password": 0}).to_list(1000)
     return {"users": users}
 
 @api_router.get("/admin/backend-health")
@@ -2061,9 +2060,9 @@ async def get_system_stats(user_id: str = Depends(get_current_user)):
     try:
         import psutil
         
-        total_users = await users_collection.count_documents({})
-        active_bots = await bots_collection.count_documents({"status": "active"})
-        total_trades = await trades_collection.count_documents({})
+        total_users = await db.users_collection.count_documents({})
+        active_bots = await db.bots_collection.count_documents({"status": "active"})
+        total_trades = await db.trades_collection.count_documents({})
         
         cpu = psutil.cpu_percent(interval=1)
         memory = psutil.virtual_memory()
@@ -2072,7 +2071,7 @@ async def get_system_stats(user_id: str = Depends(get_current_user)):
         return {
             "total_users": total_users,
             "active_bots": active_bots,
-            "total_bots": await bots_collection.count_documents({}),
+            "total_bots": await db.bots_collection.count_documents({}),
             "total_trades": total_trades,
             "cpu_usage": round(cpu, 1),
             "memory_usage": round(memory.used / (1024**2), 1),  # MB
@@ -2114,12 +2113,12 @@ async def system_health_check(user_id: str = Depends(get_current_user)):
 async def get_user_profile(user_email: str, admin_id: str = Depends(get_current_user)):
     """Get detailed user profile (admin only)"""
     try:
-        user = await users_collection.find_one({"email": user_email}, {"_id": 0, "password": 0})
+        user = await db.users_collection.find_one({"email": user_email}, {"_id": 0, "password": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Get user's bots
-        bots = await bots_collection.find({"user_id": user['id']}, {"_id": 0}).to_list(1000)
+        bots = await db.bots_collection.find({"user_id": user['id']}, {"_id": 0}).to_list(1000)
         
         # Calculate stats
         total_profit = sum(bot.get('total_profit', 0) for bot in bots)
@@ -2127,7 +2126,7 @@ async def get_user_profile(user_email: str, admin_id: str = Depends(get_current_
         active_bots = len([b for b in bots if b.get('status') == 'active'])
         
         # Get recent trades
-        trades = await trades_collection.find(
+        trades = await db.trades_collection.find(
             {"user_id": user['id']},
             {"_id": 0}
         ).sort("timestamp", -1).limit(50).to_list(50)
@@ -2155,7 +2154,7 @@ async def get_bodyguard_status(admin_id: str = Depends(get_current_user)):
         from engines.self_healing import self_healing
         
         # Get recently paused bots
-        recently_paused = await bots_collection.find(
+        recently_paused = await db.bots_collection.find(
             {"status": "paused", "paused_by_system": True},
             {"_id": 0}
         ).sort("last_trade_time", -1).limit(10).to_list(10)
@@ -2247,7 +2246,7 @@ async def confirm_live_switch(data: dict, user_id: str = Depends(get_current_use
         
         if results:
             # Enable live trading mode
-            await system_modes_collection.update_one(
+            await db.system_modes_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"liveTrading": True}},
                 upsert=True
@@ -2333,7 +2332,7 @@ async def get_flokx_alerts(user_id: str = Depends(get_current_user)):
 async def enable_autopilot(user_id: str = Depends(get_current_user)):
     """Enable autopilot mode"""
     try:
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {"$set": {"autopilot": True}},
             upsert=True
@@ -2347,7 +2346,7 @@ async def enable_autopilot(user_id: str = Depends(get_current_user)):
 async def disable_autopilot(user_id: str = Depends(get_current_user)):
     """Disable autopilot mode"""
     try:
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {"$set": {"autopilot": False}},
             upsert=True
@@ -2361,7 +2360,7 @@ async def disable_autopilot(user_id: str = Depends(get_current_user)):
 async def get_autopilot_settings(user_id: str = Depends(get_current_user)):
     """Get autopilot settings"""
     try:
-        modes = await system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
+        modes = await db.system_modes_collection.find_one({"user_id": user_id}, {"_id": 0})
         if not modes:
             return {
                 "autopilot": True,
@@ -2383,7 +2382,7 @@ async def get_autopilot_settings(user_id: str = Depends(get_current_user)):
 async def start_paper_trading(user_id: str = Depends(get_current_user)):
     """Start paper trading mode"""
     try:
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {"$set": {"paperTrading": True, "liveTrading": False}},
             upsert=True
@@ -2401,7 +2400,7 @@ async def start_live_trading(data: dict, user_id: str = Depends(get_current_user
         if not confirmed:
             return {"error": "Confirmation required", "message": "Are you sure? This uses REAL funds!"}
         
-        await system_modes_collection.update_one(
+        await db.system_modes_collection.update_one(
             {"user_id": user_id},
             {"$set": {"paperTrading": False, "liveTrading": True}},
             upsert=True
@@ -2423,7 +2422,7 @@ async def email_all_users(data: dict, user_id: str = Depends(get_current_user)):
             raise HTTPException(status_code=400, detail="Message required")
         
         # Get all users
-        users = await users_collection.find({}, {"_id": 0, "email": 1}).to_list(1000)
+        users = await db.users_collection.find({}, {"_id": 0, "email": 1}).to_list(1000)
         emails = [u['email'] for u in users]
         
         # Send emails
@@ -2479,31 +2478,31 @@ async def delete_user(target_user_id: str, user_id: str = Depends(get_current_us
             raise HTTPException(status_code=400, detail="Cannot delete yourself")
         
         # Check if user exists
-        user_to_delete = await users_collection.find_one({"id": target_user_id})
+        user_to_delete = await db.users_collection.find_one({"id": target_user_id})
         if not user_to_delete:
             raise HTTPException(status_code=404, detail="User not found")
         
         # Hard delete: Remove user and ALL associated data
         # 1. Delete all user's bots
-        await bots_collection.delete_many({"user_id": target_user_id})
+        await db.bots_collection.delete_many({"user_id": target_user_id})
         
         # 2. Delete all user's trades
-        await trades_collection.delete_many({"user_id": target_user_id})
+        await db.trades_collection.delete_many({"user_id": target_user_id})
         
         # 3. Delete all user's API keys
-        await api_keys_collection.delete_many({"user_id": target_user_id})
+        await db.api_keys_collection.delete_many({"user_id": target_user_id})
         
         # 4. Delete all user's chat messages
-        await chat_messages_collection.delete_many({"user_id": target_user_id})
+        await db.chat_messages_collection.delete_many({"user_id": target_user_id})
         
         # 5. Delete all user's alerts
-        await alerts_collection.delete_many({"user_id": target_user_id})
+        await db.alerts_collection.delete_many({"user_id": target_user_id})
         
         # 6. Delete user's system modes
-        await system_modes_collection.delete_many({"user_id": target_user_id})
+        await db.system_modes_collection.delete_many({"user_id": target_user_id})
         
         # 7. Finally, delete the user
-        result = await users_collection.delete_one({"id": target_user_id})
+        result = await db.users_collection.delete_one({"id": target_user_id})
         
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="User deletion failed")
@@ -2531,7 +2530,7 @@ async def block_unblock_user(target_user_id: str, data: dict, user_id: str = Dep
         if target_user_id == user_id:
             raise HTTPException(status_code=400, detail="Cannot block yourself")
         
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"id": target_user_id},
             {"$set": {"blocked": blocked}}
         )
@@ -2564,7 +2563,7 @@ async def admin_change_password(target_user_id: str, data: dict, user_id: str = 
         # Hash the new password
         hashed = get_password_hash(new_password)
         
-        result = await users_collection.update_one(
+        result = await db.users_collection.update_one(
             {"id": target_user_id},
             {"$set": {"password_hash": hashed}}
         )
@@ -2640,7 +2639,7 @@ async def test_email_alert(user_id: str = Depends(get_current_user)):
     """Test email alert system"""
     try:
         from email_alerts import email_alerts
-        user = await users_collection.find_one({"id": user_id}, {"_id": 0})
+        user = await db.users_collection.find_one({"id": user_id}, {"_id": 0})
         
         success = await email_alerts.send_email(
             user.get('email', 'test@example.com'),
@@ -2746,7 +2745,7 @@ async def sse_overview_stream(request: Request, user_id: str = Depends(get_curre
                     break
                 
                 # Fetch overview data
-                bots = await bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
+                bots = await db.bots_collection.find({"user_id": user_id}, {"_id": 0}).to_list(1000)
                 active_bots = [b for b in bots if b.get('status') == 'active']
                 
                 total_profit = sum(
@@ -2994,7 +2993,7 @@ async def admin_emergency_stop(user_id: str = Depends(get_current_user)):
         trading_scheduler.stop()
         
         # Pause all bots
-        await bots_collection.update_many(
+        await db.bots_collection.update_many(
             {},
             {"$set": {"status": "paused"}}
         )
@@ -3122,30 +3121,8 @@ except Exception as e:
     logger.warning(f"Optional system/trades/realtime routers could not be loaded: {e}")
 
 # ============================================================================
-# STARTUP EVENT
+# ROOT ENDPOINT
 # ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Start autonomous systems and schedulers"""
-    try:
-        logger.info("🚀 Starting Amarktai Network autonomous systems...")
-        
-        # Start autopilot engine
-        from autopilot_engine import autopilot
-        await autopilot.start()
-        
-        # Start AI bodyguard
-        from ai_bodyguard import bodyguard
-        await bodyguard.start()
-        
-        # Start email scheduler
-        from email_scheduler import email_scheduler
-        await email_scheduler.start()
-        
-        logger.info("✅ All autonomous systems started successfully")
-    except Exception as e:
-        logger.error(f"Startup error: {e}")
 
 @app.get("/")
 async def root():
