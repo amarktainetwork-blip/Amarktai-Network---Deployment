@@ -3112,30 +3112,8 @@ except Exception as e:
     logger.warning(f"Optional system/trades/realtime routers could not be loaded: {e}")
 
 # ============================================================================
-# STARTUP EVENT
+# ROOT ENDPOINT
 # ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Start autonomous systems and schedulers"""
-    try:
-        logger.info("🚀 Starting Amarktai Network autonomous systems...")
-        
-        # Start autopilot engine
-        from autopilot_engine import autopilot
-        await autopilot.start()
-        
-        # Start AI bodyguard
-        from ai_bodyguard import bodyguard
-        await bodyguard.start()
-        
-        # Start email scheduler
-        from email_scheduler import email_scheduler
-        await email_scheduler.start()
-        
-        logger.info("✅ All autonomous systems started successfully")
-    except Exception as e:
-        logger.error(f"Startup error: {e}")
 
 @app.get("/")
 async def root():
