@@ -207,53 +207,260 @@ sudo systemctl reload nginx
 
 ### Prerequisites
 - Ubuntu 24.04 LTS
-- Python 3.11+
-- MongoDB 6.0+
+- Python 3.12 (recommended) or 3.11+
+- MongoDB 6.0+ (or 7.0+ recommended)
 - systemd
+- 2GB RAM minimum (4GB recommended)
 
-### Installation
+### Fresh VPS Installation (Step-by-Step)
+
+#### 1. Install System Dependencies
 ```bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Python 3.12 if not present
+sudo apt install -y python3.12 python3.12-venv python3-pip
+
+# Install MongoDB (Docker method - recommended)
+sudo apt install -y docker.io
+sudo systemctl enable --now docker
+sudo docker run -d \
+  --name amarktai-mongo \
+  --restart always \
+  -p 127.0.0.1:27017:27017 \
+  -v /var/amarktai/mongodb:/data/db \
+  mongo:7
+```
+
+#### 2. Clone Repository
+```bash
+# Create application directory
+sudo mkdir -p /var/amarktai
+cd /var/amarktai
+
 # Clone repository
-git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deployment.git
-cd Amarktai-Network---Deployment
+sudo git clone https://github.com/amarktainetwork-blip/Amarktai-Network---Deployment.git app
+cd app
 
+# Set permissions
+sudo chown -R $USER:$USER /var/amarktai
+```
+
+#### 3. Setup Python Environment
+```bash
 # Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+python3.12 -m venv /var/amarktai/venv
 
-# Install dependencies
-pip install -r backend/requirements.txt
+# Activate virtual environment
+source /var/amarktai/venv/bin/activate
 
-# Configure environment
-cp backend/.env.example backend/.env
-nano backend/.env  # Set MONGO_URI, JWT_SECRET, etc.
+# Upgrade pip
+pip install --upgrade pip
 
-# Run preflight check
-python -m backend.preflight
+# Install dependencies (this must succeed with no conflicts)
+cd /var/amarktai/app/backend
+pip install -r requirements.txt
 
-# If preflight passes, start server
-uvicorn backend.server:app --host 127.0.0.1 --port 8000
+# Verify installation
+pip check
+# Should output: "No broken requirements found."
+```
+
+#### 4. Configure Environment
+```bash
+# Create .env file
+cp /var/amarktai/app/backend/.env.example /var/amarktai/app/backend/.env
+
+# Edit configuration
+nano /var/amarktai/app/backend/.env
+```
+
+**Required environment variables:**
+```bash
+# Database
+MONGO_URI=mongodb://127.0.0.1:27017
+MONGO_DB_NAME=amarktai_trading
+
+# Security (CHANGE THESE!)
+JWT_SECRET=$(openssl rand -hex 32)
+ADMIN_PASSWORD=$(openssl rand -base64 24)
+
+# Feature Flags (safe defaults - all disabled)
+ENABLE_TRADING=0
+ENABLE_AUTOPILOT=0
+ENABLE_CCXT=0
+ENABLE_SCHEDULERS=0
+
+# Optional: AI features
+# OPENAI_API_KEY=sk-your-key-here
+```
+
+#### 5. Run Preflight Checks
+```bash
+# Must pass before starting server
+cd /var/amarktai/app/backend
+python -m preflight
+
+# Expected output:
+# ✅ Database connected and collections initialized
+# ✅ Server imported successfully
+# ✅ All required auth functions present
+# 🎉 PREFLIGHT PASSED - Server can start safely
+```
+
+#### 6. Test Manual Start
+```bash
+# Start server manually to verify
+cd /var/amarktai/app/backend
+uvicorn server:app --host 127.0.0.1 --port 8000
+
+# In another terminal, test health endpoint
+curl http://127.0.0.1:8000/api/health/ping
+# Should return: {"status":"healthy","timestamp":"..."}
+
+# Check port binding
+ss -tlnp | grep 8000
+# Should show: LISTEN 0 4096 127.0.0.1:8000
+```
+
+#### 7. Setup Systemd Service
+```bash
+# Create systemd service file
+sudo tee /etc/systemd/system/amarktai-backend.service > /dev/null <<EOF
+[Unit]
+Description=Amarktai Network Backend
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/var/amarktai/app/backend
+Environment="PATH=/var/amarktai/venv/bin"
+ExecStart=/var/amarktai/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable and start service
+sudo systemctl enable amarktai-backend
+sudo systemctl start amarktai-backend
+
+# Check status
+sudo systemctl status amarktai-backend
+# Should show: Active: active (running)
+
+# View logs
+sudo journalctl -u amarktai-backend -f
+```
+
+#### 8. Setup Nginx (Optional - for production)
+```bash
+# Install nginx
+sudo apt install -y nginx
+
+# Create nginx configuration
+sudo tee /etc/nginx/sites-available/amarktai > /dev/null <<'EOF'
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location /api {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        root /var/amarktai/app/frontend/build;
+        try_files $uri /index.html;
+    }
+}
+EOF
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/amarktai /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
 ### Common Failures & Fixes
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `ImportError: cannot import name 'wallets_collection'` | Missing collection in database.py | Update to latest version |
-| `AttributeError: 'NoneType' object has no attribute 'add_job'` | Autopilot scheduler not initialized | Check `ENABLE_AUTOPILOT` flag |
-| `RuntimeWarning: coroutine 'stop' was never awaited` | Async shutdown not awaited | Update to latest version |
+| `ImportError: cannot import name 'X'` | Missing export in database.py | All collections now exported, update to latest |
+| `ModuleNotFoundError: No module named 'motor'` | Dependencies not installed | Run `pip install -r requirements.txt` |
+| `AttributeError: 'NoneType' object has no attribute 'add_job'` | Autopilot scheduler not initialized | Fixed - scheduler created in __init__ |
+| `RuntimeWarning: coroutine 'stop' was never awaited` | Async shutdown not awaited | Fixed - all stop() calls properly awaited |
 | Server doesn't bind to port 8000 | Import-time crash before uvicorn starts | Run `python -m backend.preflight` to diagnose |
 | `ss -tlnp` shows no process on 8000 | Systemd restart loop | Check logs: `journalctl -u amarktai-backend -n 100` |
+| `ResolutionImpossible` during pip install | Dependency conflicts | Fixed - single pycares==4.11.0 pin |
+| `Database connection failed` | MongoDB not running | Start MongoDB: `sudo systemctl start docker` |
 
-### Health Check
-After starting, verify:
+### Validation Checklist
+
+After deployment, verify all of these:
+
 ```bash
-# Check port is bound
-ss -tlnp | grep 8000
+# ✅ 1. Dependencies installed without conflicts
+pip check
+# Output: "No broken requirements found."
 
-# Ping health endpoint
-curl http://127.0.0.1:8000/api/health/ping
-# Should return: {"status": "healthy", "timestamp": "..."}
+# ✅ 2. Database connection works
+python -c "import asyncio; import database; asyncio.run(database.connect()); print('✅ DB OK')"
+
+# ✅ 3. Server imports successfully
+python -c "import server; print('✅ Server imports OK')"
+
+# ✅ 4. Preflight passes
+python -m preflight
+# Output: "🎉 PREFLIGHT PASSED"
+
+# ✅ 5. Port 8000 listening
+ss -tlnp | grep 8000
+# Output: "LISTEN ... 127.0.0.1:8000"
+
+# ✅ 6. Health endpoint responds
+curl -f http://127.0.0.1:8000/api/health/ping
+# Output: {"status":"healthy","timestamp":"..."}
+
+# ✅ 7. Systemd service running
+sudo systemctl is-active amarktai-backend
+# Output: "active"
+```
+
+**If all checks pass:** ✅ Deployment successful!
+
+**If any check fails:** See Common Failures table above or check logs with `journalctl -u amarktai-backend -n 100`
+
+### Quick Troubleshooting
+
+```bash
+# View real-time logs
+sudo journalctl -u amarktai-backend -f
+
+# Restart service
+sudo systemctl restart amarktai-backend
+
+# Check what's using port 8000
+sudo lsof -i :8000
+
+# Test MongoDB connection
+docker exec amarktai-mongo mongosh --eval "db.runCommand({ ping: 1 })"
+
+# Re-run preflight
+cd /var/amarktai/app/backend
+source /var/amarktai/venv/bin/activate
+python -m preflight
 ```
 
 ## 📚 Documentation
