@@ -3,21 +3,22 @@ Database module - Normalized contract for MongoDB access.
 
 This module provides a stable, consistent interface to MongoDB collections
 and connection management. All imports should use:
-    import database as db
+    import database
     
     # Then access collections via:
-    db.users_collection
-    db.bots_collection
+    database.users_collection
+    database.bots_collection
     # etc.
 
 Exported globals:
-- client: AsyncIOMotorClient instance
-- db: Database instance
+- client: AsyncIOMotorClient instance (None until connect() called)
+- db: Database instance (None until connect() called)
 - All collection handles (users_collection, bots_collection, etc.)
 
 Exported functions:
 - get_database(): Returns the database instance
-- async connect_db(): Initialize/reconnect database
+- async connect(): Initialize database connection (idempotent)
+- async connect_db(): Alias for connect()
 - async close_db(): Clean shutdown of database client
 - setup_collections(): Initialize all collection globals
 """
@@ -44,9 +45,10 @@ mongo_url = os.environ.get('MONGO_URI') or os.environ.get('MONGO_URL', 'mongodb:
 # fall back to the legacy `DB_NAME`.  Default to `amarktai_trading` if neither is set.
 db_name = os.environ.get('MONGO_DB_NAME') or os.environ.get('DB_NAME', 'amarktai_trading')
 
-# Global database client and database handle (initialized at module import)
-client = AsyncIOMotorClient(mongo_url)
-db = client[db_name]
+# Global database client and database handle (initialized lazily by connect())
+client = None
+db = None
+_connected = False
 
 # =============================================================================
 # COLLECTION GLOBALS
@@ -93,37 +95,50 @@ def get_database():
     Get the database instance.
     
     Returns:
-        Database: The MongoDB database handle
+        Database: The MongoDB database handle (may be None if not connected)
     """
     return db
 
 
-async def connect_db():
+async def connect():
     """
-    Initialize or reconnect database connection.
+    Initialize database connection (idempotent).
     
-    This function can be called multiple times safely (idempotent).
-    It will set up all collection globals.
+    This function can be called multiple times safely.
+    It will set up the client, database handle, and all collection globals.
     """
-    global client, db
-    global users_collection, api_keys_collection, bots_collection, trades_collection
-    global alerts_collection, chat_messages_collection, system_modes_collection
-    global learning_data_collection, learning_logs_collection
-    global audit_log_collection, autopilot_actions_collection, rogue_detections_collection
-    global wallets_collection, ledger_collection, profits_collection
-    global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
+    global client, db, _connected
+    
+    if _connected and client is not None:
+        logger.info("✅ Database already connected")
+        return
     
     try:
+        # Create client and database handle
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[db_name]
+        
         # Test connection
         await client.admin.command('ping')
-        logger.info(f"✅ Database connected: {db_name}")
+        _connected = True
+        logger.info(f"✅ Database connected: {db_name} at {mongo_url[:30]}...")
         
         # Setup collections
         setup_collections()
         
     except Exception as e:
         logger.error(f"❌ Database connection failed: {e}")
+        client = None
+        db = None
+        _connected = False
         raise
+
+
+async def connect_db():
+    """
+    Alias for connect() - for backwards compatibility.
+    """
+    await connect()
 
 
 async def close_db():
@@ -154,6 +169,10 @@ def setup_collections():
     global audit_log_collection, autopilot_actions_collection, rogue_detections_collection
     global wallets_collection, ledger_collection, profits_collection
     global orders_collection, positions_collection, balance_snapshots_collection, performance_metrics_collection
+    
+    if db is None:
+        logger.warning("⚠️  Cannot setup collections - database not connected")
+        return
     
     # Core Collections
     users_collection = db.users
@@ -187,8 +206,7 @@ def setup_collections():
     logger.info("✅ All collection globals initialized")
 
 
-# Initialize collections immediately at module import
-setup_collections()
+# DO NOT call setup_collections() at import time - it will be called by connect()
 
 
 # =============================================================================

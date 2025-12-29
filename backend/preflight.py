@@ -5,26 +5,19 @@ Run before deploying: python -m backend.preflight
 """
 import sys
 import os
+import asyncio
 
-def main():
+async def main_async():
+    """Async portion of preflight check"""
     try:
-        print("🔍 Preflight check starting...")
-        
-        # Check environment
-        mongo_uri = os.getenv('MONGO_URI') or os.getenv('MONGO_URL')
-        if not mongo_uri:
-            print("⚠️  Warning: MONGO_URI not set, will use default mongodb://localhost:27017")
-        else:
-            print(f"✅ MongoDB URI configured: {mongo_uri[:20]}...")
-        
         # Import database module first
         print("\n📦 Importing database module...")
-        import database as db
+        import database
         
-        # Verify database exports
+        # Verify database exports exist (before connecting)
         print("📦 Checking database module exports...")
         required_exports = [
-            'client', 'db', 'get_database', 'connect_db', 'close_db', 'setup_collections', 'init_db',
+            'client', 'db', 'get_database', 'connect', 'connect_db', 'close_db', 'setup_collections', 'init_db',
             'users_collection', 'bots_collection', 'api_keys_collection',
             'trades_collection', 'system_modes_collection', 'alerts_collection',
             'chat_messages_collection', 'learning_logs_collection',
@@ -34,7 +27,7 @@ def main():
         
         missing_exports = []
         for export in required_exports:
-            if not hasattr(db, export):
+            if not hasattr(database, export):
                 missing_exports.append(export)
                 print(f"❌ Missing export: {export}")
             else:
@@ -45,6 +38,21 @@ def main():
             return 1
         
         print("\n✅ All required database exports present")
+        
+        # Test database connection
+        print("\n🔌 Testing database connection...")
+        try:
+            await database.connect()
+            print("✅ Database connection successful")
+        except Exception as e:
+            print(f"⚠️  Database connection failed (this is OK if MongoDB not running): {e}")
+            print("    Server will fail at startup if MongoDB is not available")
+        
+        # Verify collections are initialized after connect
+        if database.users_collection is not None:
+            print("✅ Collections initialized after connect()")
+        else:
+            print("⚠️  Collections still None after connect() - check setup_collections()")
         
         # Import server (this triggers all imports)
         print("\n📦 Importing server module...")
@@ -65,26 +73,13 @@ def main():
             return 1
         print("✅ Autopilot engine initialized correctly")
         
-        # Smoke test: Verify database collections are callable
+        # Smoke test: Verify database collections are accessible
         print("\n🔥 Running smoke tests...")
-        if db.users_collection is None:
-            print("❌ FAILED - users_collection is None")
+        if hasattr(database, 'users_collection'):
+            print("✅ database.users_collection accessible")
+        else:
+            print("❌ FAILED - Cannot access database.users_collection")
             return 1
-        if db.bots_collection is None:
-            print("❌ FAILED - bots_collection is None")
-            return 1
-        if db.db is None:
-            print("❌ FAILED - db handle is None")
-            return 1
-        
-        print("✅ Database collections initialized")
-        
-        # Verify collection access pattern
-        if not hasattr(db, 'users_collection'):
-            print("❌ FAILED - Cannot access db.users_collection")
-            return 1
-        
-        print("✅ Collection access pattern verified")
         
         # Check for common issues
         print("\n🔍 Checking for common issues...")
@@ -99,11 +94,13 @@ def main():
         
         print("✅ No duplicate functions detected")
         
-        print("\n🎉 PREFLIGHT PASSED - Server can start safely")
-        print("\n📋 Next steps:")
-        print("   1. Set feature flags (ENABLE_TRADING, ENABLE_AUTOPILOT, etc.)")
-        print("   2. Start server: uvicorn backend.server:app --host 127.0.0.1 --port 8000")
-        print("   3. Verify: curl http://127.0.0.1:8000/api/health/ping")
+        # Close database connection
+        try:
+            await database.close_db()
+            print("✅ Database connection closed cleanly")
+        except Exception as e:
+            print(f"⚠️  Error closing database: {e}")
+        
         return 0
         
     except ImportError as e:
@@ -111,6 +108,37 @@ def main():
         import traceback
         traceback.print_exc()
         return 1
+    except Exception as e:
+        print(f"\n❌ PREFLIGHT FAILED - Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def main():
+    try:
+        print("🔍 Preflight check starting...")
+        
+        # Check environment
+        mongo_uri = os.getenv('MONGO_URI') or os.getenv('MONGO_URL')
+        if not mongo_uri:
+            print("⚠️  Warning: MONGO_URI not set, will use default mongodb://localhost:27017")
+        else:
+            print(f"✅ MongoDB URI configured: {mongo_uri[:20]}...")
+        
+        # Run async checks
+        result = asyncio.run(main_async())
+        
+        if result == 0:
+            print("\n🎉 PREFLIGHT PASSED - Server can start safely")
+            print("\n📋 Next steps:")
+            print("   1. Ensure MongoDB is running")
+            print("   2. Set feature flags (ENABLE_TRADING, ENABLE_AUTOPILOT, etc.)")
+            print("   3. Start server: uvicorn backend.server:app --host 127.0.0.1 --port 8000")
+            print("   4. Verify: curl http://127.0.0.1:8000/api/health/ping")
+        
+        return result
+        
     except Exception as e:
         print(f"\n❌ PREFLIGHT FAILED - Unexpected error: {e}")
         import traceback

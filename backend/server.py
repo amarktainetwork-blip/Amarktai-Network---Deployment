@@ -39,6 +39,16 @@ async def lifespan(app: FastAPI):
     """Startup and shutdown events with feature flags for plug-and-play stability"""
     logger.info("🚀 Starting Amarktai Network...")
     
+    # =========================================================================
+    # STEP 1: Connect to database FIRST (before any other services)
+    # =========================================================================
+    try:
+        await db.connect()
+        logger.info("✅ Database connected and collections initialized")
+    except Exception as e:
+        logger.error(f"❌ FATAL: Database connection failed: {e}")
+        raise  # Cannot proceed without database
+    
     # Feature flags for safe plug-and-play deployment
     enable_trading = os.getenv('ENABLE_TRADING', '0') == '1'
     enable_autopilot = os.getenv('ENABLE_AUTOPILOT', '0') == '1'
@@ -49,6 +59,10 @@ async def lifespan(app: FastAPI):
     
     # Track background tasks for clean shutdown
     background_tasks = []
+    
+    # =========================================================================
+    # STEP 2: Start services in deterministic order
+    # =========================================================================
     
     # Start autonomous systems based on feature flags
     if enable_autopilot:
